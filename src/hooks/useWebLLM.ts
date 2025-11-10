@@ -115,6 +115,15 @@ export function useWebLLM(initialModel = DEFAULT_MODEL) {
           );
         }
 
+        // Log GPU info for diagnostics
+        const adapterInfo = await (adapter as any).requestAdapterInfo?.();
+        console.log("[WebLLM] WebGPU Adapter Info:", {
+          vendor: adapterInfo?.vendor || "unknown",
+          architecture: adapterInfo?.architecture || "unknown",
+          device: adapterInfo?.device || "unknown",
+          description: adapterInfo?.description || "unknown",
+        });
+
         const engine = await obtainEngine(modelId, (report) => {
           if (cancelled) return;
           setStatus({
@@ -128,12 +137,15 @@ export function useWebLLM(initialModel = DEFAULT_MODEL) {
 
         if (!cancelled) {
           engineRef.current = engine;
+          const deviceInfo = adapterInfo?.description || "GPU";
           setStatus({
             model: "webllm",
             label: "WebLLM Reasoner",
             state: "ready",
             message: `${modelId} ready`,
+            detail: `Using WebGPU on ${deviceInfo}`,
           });
+          console.log(`[WebLLM] Model loaded successfully on ${deviceInfo}`);
         }
       } catch (error) {
         if (!cancelled) {

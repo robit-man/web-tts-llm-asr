@@ -96,9 +96,12 @@ export function useWhisperModel(initialModel = DEFAULT_MODEL) {
           ...prev,
           state: message.state,
           message: message.message,
-          detail: message.detail,
+          detail: message.detail || (message.state === "ready" ? "Using CPU/WASM (no GPU support)" : undefined),
           progress: message.progress,
         }));
+        if (message.state === "ready") {
+          console.log("[Whisper] Model loaded - using CPU/WASM (Transformers.js does not support WebGPU yet)");
+        }
         return;
       }
 

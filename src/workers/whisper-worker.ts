@@ -52,7 +52,7 @@ const ctx: DedicatedWorkerGlobalScope = self as DedicatedWorkerGlobalScope;
 const DEFAULT_MODEL_ID = "Xenova/whisper-tiny";
 const STREAM_SAMPLE_RATE = 16000;
 const STREAM_TAIL_SECONDS = 4;
-const STREAM_MIN_CHUNK_SAMPLES = STREAM_SAMPLE_RATE * 2;
+const STREAM_MIN_CHUNK_SAMPLES = STREAM_SAMPLE_RATE * 0.5; // 0.5 seconds minimum
 
 let transcriberPromise: Promise<any> | null = null;
 let transcriber: any | null = null;
@@ -418,7 +418,7 @@ async function processStream() {
   if (finalize) {
     const result = await transcribeAudio(streamState.id, batch, {
       stream: true,
-      suppressUpdate: true,
+      suppressUpdate: false, // Enable token-level updates
       suppressComplete: true,
     });
     if (result) {
@@ -438,7 +438,7 @@ async function processStream() {
   } else {
     const result = await transcribeAudio(streamState.id, batch, {
       stream: true,
-      suppressUpdate: true,
+      suppressUpdate: false, // Enable token-level updates
       suppressComplete: true,
     });
     if (result) {
