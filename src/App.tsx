@@ -5,6 +5,7 @@ import ModelStatusCard from "./components/ModelStatusCard";
 import RecorderButton from "./components/RecorderButton";
 import ConversationLog from "./components/ConversationLog";
 import AudioVisualizer from "./components/AudioVisualizer";
+import WaveformVisualizer from "./components/WaveformVisualizer";
 import { useAudioRecorder, type LevelSnapshot } from "./hooks/useAudioRecorder";
 import { useWhisperModel } from "./hooks/useWhisper";
 import { useWebLLM } from "./hooks/useWebLLM";
@@ -46,6 +47,19 @@ const WEBLLM_OPTIONS = [
   { id: "TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC", label: "TinyLlama 1.1B (831 MB)", group: "Alternative" },
   { id: "Hermes-3-Llama-3.2-3B-q4f16_1-MLC", label: "Hermes 3 Llama 3.2 3B (2.3 GB)", group: "Alternative" },
 ];
+
+type VoiceSessionPhase = "idle" | "listening" | "processing" | "transcribing" | "responding" | "speaking" | "error";
+
+const formatDuration = (totalSeconds: number) => {
+  const minutes = Math.floor(totalSeconds / 60)
+    .toString()
+    .padStart(2, "0");
+  const seconds = (totalSeconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${seconds}`;
+};
+
+const BLANK_AUDIO_PATTERN = /^\s*\[BLANK_AUDIO\]\s*$/i;
+const BLANK_AUDIO_STRIPPER = /\[BLANK_AUDIO\]/gi;
 
 function App() {
   // Load saved model preferences from localStorage
@@ -100,6 +114,17 @@ function App() {
   const [streamingAssistantTurn, setStreamingAssistantTurn] = useState<ConversationTurn | null>(null);
   const whisperPrimedRef = useRef(false);
   const whisperPrimingRef = useRef(false);
+  const [voiceSessionActive, setVoiceSessionActive] = useState(false);
+  const [voiceSessionStatus, setVoiceSessionStatus] = useState("Tap Start Session to begin listening.");
+  const [voiceSessionPhase, setVoiceSessionPhase] = useState<VoiceSessionPhase>("idle");
+  const [voiceSessionError, setVoiceSessionError] = useState<string | null>(null);
+  const [detectedUtterances, setDetectedUtterances] = useState<string[]>([]);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const recordingTimerRef = useRef<number | null>(null);
+  const lastUtteranceRef = useRef<string>("");
+  const [segmentPending, setSegmentPending] = useState(false);
+  const previousRecordingStateRef = useRef(false);
+  const [capturedAudioBuffer, setCapturedAudioBuffer] = useState<AudioBuffer | null>(null);
 
   const statuses = useMemo(() => {
     return [whisperStatus, llmStatus, piperStatus].slice().sort(statusSort);
@@ -109,6 +134,18 @@ function App() {
   const displayedVoices = voices.slice(0, 60);
   const selectedVoiceLabel =
     voices.find((voice) => voice.id === voiceId)?.name ?? `Voice ${voiceId + 1}`;
+  const sessionPhaseLabel = useMemo(() => {
+    const labels: Record<VoiceSessionPhase, string> = {
+      idle: "Idle",
+      listening: "Listening",
+      processing: "Processing",
+      transcribing: "Transcribing",
+      responding: "Responding",
+      speaking: "Speaking",
+      error: "Check status",
+    };
+    return labels[voiceSessionPhase];
+  }, [voiceSessionPhase]);
   useEffect(() => {
     turnsRef.current = turns;
   }, [turns]);
@@ -271,23 +308,107 @@ function App() {
     [ingressMode, processMessage, speak, updateSpeechUrl],
   );
 
-  const handleRecordingComplete = useCallback(async (blob: Blob) => {
-    setAlert(null);
-    setIsProcessing(true);
-    try {
-      // Use batch mode for immediate token-level updates like Cygnus
-      const result = await transcribeBatch(blob);
-      if (result && result.text.trim()) {
-        await processMessage(result.text.trim());
-      } else {
-        setAlert("I didn't hear anything. Try again.");
+  const handleRecordingComplete = useCallback(
+    async (blob: Blob | null) => {
+      setSegmentPending(false);
+
+      console.log('[App] handleRecordingComplete called:', {
+        hasBlob: !!blob,
+        blobSize: blob?.size,
+        blobType: blob?.type
+      });
+
+      if (!blob) {
+        setCapturedAudioBuffer(null);
+        if (voiceSessionActive) {
+          setVoiceSessionError("No speech detected. Listening again.");
+        } else {
+          setAlert("I didn't hear anything. Try again.");
+        }
+        return;
       }
-    } catch (error) {
-      setAlert((error as Error).message ?? "Unable to transcribe audio.");
-    } finally {
-      setIsProcessing(false);
-    }
-  }, [transcribeBatch, processMessage]);
+
+      // Decode the blob to AudioBuffer for visualization
+      try {
+        const arrayBuffer = await blob.arrayBuffer();
+        const audioContext = new AudioContext({ sampleRate: 16000 });
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+        await audioContext.close();
+
+        console.log('[App] Decoded audio buffer:', {
+          duration: audioBuffer.duration,
+          sampleRate: audioBuffer.sampleRate,
+          length: audioBuffer.length,
+          numberOfChannels: audioBuffer.numberOfChannels
+        });
+
+        setCapturedAudioBuffer(audioBuffer);
+      } catch (decodeError) {
+        console.error('[App] Failed to decode audio for visualization:', decodeError);
+      }
+
+      setAlert(null);
+      if (voiceSessionActive) {
+        setVoiceSessionError(null);
+      }
+      setIsProcessing(true);
+      try {
+        const result = await transcribeBatch(blob);
+        const rawText = result?.text?.trim();
+        if (!rawText) {
+          const message = "I didn't hear anything. Try again.";
+          setAlert(message);
+          if (voiceSessionActive) {
+            setVoiceSessionError(message);
+          }
+          return;
+        }
+
+        if (BLANK_AUDIO_PATTERN.test(rawText)) {
+          const message = "Silence detected. Listening…";
+          if (voiceSessionActive) {
+            setVoiceSessionError(message);
+          } else {
+            setAlert(message);
+          }
+          return;
+        }
+
+        const sanitized = rawText.replace(BLANK_AUDIO_STRIPPER, "").trim();
+        if (!sanitized) {
+          const message = "Silence detected. Listening…";
+          if (voiceSessionActive) {
+            setVoiceSessionError(message);
+          } else {
+            setAlert(message);
+          }
+          return;
+        }
+
+        if (voiceSessionActive) {
+          if (sanitized === lastUtteranceRef.current) {
+            return;
+          }
+          lastUtteranceRef.current = sanitized;
+          setDetectedUtterances((previous) => {
+            const next = [sanitized, ...previous];
+            return next.slice(0, 5);
+          });
+        }
+
+        await processMessage(sanitized);
+      } catch (error) {
+        const message = (error as Error).message ?? "Unable to transcribe audio.";
+        setAlert(message);
+        if (voiceSessionActive) {
+          setVoiceSessionError(message);
+        }
+      } finally {
+        setIsProcessing(false);
+      }
+    },
+    [processMessage, transcribeBatch, voiceSessionActive],
+  );
 
   const recorder = useAudioRecorder({
     onRecordingComplete: handleRecordingComplete,
@@ -296,24 +417,83 @@ function App() {
     enableVAD: true,
     silenceDurationMs: 1200,
   });
-  const loopBusy =
-    isProcessing ||
-    isTranscribing ||
-    isResponding ||
-    isSpeaking ||
-    recorder.isRecording;
+  const pipelineBusy = isProcessing || isTranscribing || isResponding || isSpeaking;
+  const loopBusy = pipelineBusy || (!voiceSessionActive && recorder.isRecording);
+  const voiceSessionActionLabel = recorder.isRecording ? "Transcribe now" : "Start capture";
 
   const handleStartRecording = useCallback(async () => {
+    if (recorder.isRecording || pipelineBusy || !ready) {
+      return;
+    }
     try {
       await recorder.start();
     } catch (error) {
       setAlert((error as Error).message ?? "Unable to access microphone.");
+      if (voiceSessionActive) {
+        setVoiceSessionError((error as Error).message ?? "Unable to access microphone.");
+      }
     }
+  }, [pipelineBusy, ready, recorder, setAlert, voiceSessionActive]);
+
+  const handleStopRecording = useCallback((reason: 'manual' | 'silence' = 'silence') => {
+    recorder.stop(reason);
   }, [recorder]);
 
-  const handleStopRecording = useCallback(() => {
-    recorder.stop();
-  }, [recorder]);
+  const startVoiceSession = useCallback(() => {
+    if (voiceSessionActive) {
+      return;
+    }
+    if (!ready) {
+      setAlert("Models are still loading. Please wait.");
+      return;
+    }
+    setVoiceSessionError(null);
+    setDetectedUtterances([]);
+    lastUtteranceRef.current = "";
+    setVoiceSessionActive(true);
+    setVoiceSessionPhase("processing");
+    setVoiceSessionStatus("Preparing microphone…");
+    setSegmentPending(false);
+    previousRecordingStateRef.current = recorder.isRecording;
+  }, [ready, recorder.isRecording, setAlert, voiceSessionActive]);
+
+  const stopVoiceSession = useCallback(() => {
+    if (!voiceSessionActive) {
+      return;
+    }
+    setVoiceSessionActive(false);
+    setVoiceSessionPhase("idle");
+    setVoiceSessionStatus("Voice session paused. Tap start session when you're ready.");
+    setRecordingSeconds(0);
+    setVoiceSessionError(null);
+    setSegmentPending(false);
+    previousRecordingStateRef.current = false;
+    if (recordingTimerRef.current !== null) {
+      window.clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    if (recorder.isRecording) {
+      recorder.stop();
+    }
+  }, [recorder, voiceSessionActive]);
+
+  const forceVoiceSendoff = useCallback(() => {
+    if (!voiceSessionActive) {
+      return;
+    }
+    if (recorder.isRecording) {
+      handleStopRecording();
+    } else if (!segmentPending && !pipelineBusy) {
+      void handleStartRecording();
+    }
+  }, [
+    handleStartRecording,
+    handleStopRecording,
+    pipelineBusy,
+    recorder.isRecording,
+    segmentPending,
+    voiceSessionActive,
+  ]);
 
   useEffect(() => {
     if (
@@ -324,7 +504,7 @@ function App() {
       if (typeof AudioBuffer === "undefined") return;
       whisperPrimingRef.current = true;
       const silentBuffer = new AudioBuffer({
-        length: Math.max(1, Math.floor(TARGET_SAMPLE_RATE * 0.8)),
+        length: TARGET_SAMPLE_RATE,
         numberOfChannels: 1,
         sampleRate: TARGET_SAMPLE_RATE,
       });
@@ -336,6 +516,136 @@ function App() {
         });
     }
   }, [transcribe, whisperStatus.state]);
+
+  useEffect(() => {
+    if (!voiceSessionActive) {
+      return;
+    }
+    if (!ready || pipelineBusy || recorder.isRecording || segmentPending) {
+      return;
+    }
+    void handleStartRecording();
+  }, [handleStartRecording, pipelineBusy, ready, recorder.isRecording, segmentPending, voiceSessionActive]);
+
+  useEffect(() => {
+    if (!voiceSessionActive) {
+      if (recordingTimerRef.current !== null) {
+        window.clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+      setRecordingSeconds(0);
+      return;
+    }
+
+    if (recorder.isRecording) {
+      if (recordingTimerRef.current === null) {
+        recordingTimerRef.current = window.setInterval(() => {
+          setRecordingSeconds((previous) => previous + 1);
+        }, 1000);
+      }
+    } else if (recordingTimerRef.current !== null) {
+      window.clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+      setRecordingSeconds(0);
+    }
+  }, [recorder.isRecording, voiceSessionActive]);
+
+  useEffect(() => {
+    if (!voiceSessionActive) {
+      previousRecordingStateRef.current = recorder.isRecording;
+      setSegmentPending(false);
+      return;
+    }
+    if (previousRecordingStateRef.current && !recorder.isRecording) {
+      setSegmentPending(true);
+    }
+    previousRecordingStateRef.current = recorder.isRecording;
+  }, [recorder.isRecording, voiceSessionActive]);
+
+  useEffect(() => {
+    if (!voiceSessionActive) {
+      setVoiceSessionPhase("idle");
+      setVoiceSessionStatus("Tap Start Session to begin listening.");
+      return;
+    }
+
+    if (voiceSessionError) {
+      setVoiceSessionPhase("error");
+      setVoiceSessionStatus(voiceSessionError);
+      return;
+    }
+
+    if (segmentPending) {
+      setVoiceSessionPhase("processing");
+      setVoiceSessionStatus("Processing audio…");
+      return;
+    }
+
+    if (recorder.isRecording) {
+      setVoiceSessionPhase("listening");
+      setVoiceSessionStatus(`Listening… ${formatDuration(recordingSeconds)}`);
+      return;
+    }
+
+    if (isProcessing) {
+      setVoiceSessionPhase("processing");
+      setVoiceSessionStatus("Processing audio…");
+      return;
+    }
+
+    if (isTranscribing) {
+      setVoiceSessionPhase("transcribing");
+      setVoiceSessionStatus("Transcribing with Whisper…");
+      return;
+    }
+
+    if (isResponding) {
+      setVoiceSessionPhase("responding");
+      setVoiceSessionStatus("Generating assistant response…");
+      return;
+    }
+
+    if (isSpeaking) {
+      setVoiceSessionPhase("speaking");
+      setVoiceSessionStatus("Speaking response…");
+      return;
+    }
+
+    setVoiceSessionPhase("idle");
+    setVoiceSessionStatus("Standing by. We'll listen again in a moment.");
+  }, [
+    isProcessing,
+    isResponding,
+    isSpeaking,
+    isTranscribing,
+    recorder.isRecording,
+    recordingSeconds,
+    voiceSessionActive,
+    voiceSessionError,
+    segmentPending,
+  ]);
+
+  useEffect(() => {
+    if (!voiceSessionActive) {
+      setDetectedUtterances([]);
+      lastUtteranceRef.current = "";
+    }
+  }, [voiceSessionActive]);
+
+  useEffect(() => {
+    if (voiceSessionActive && recorder.isRecording && voiceSessionError) {
+      setVoiceSessionError(null);
+    }
+  }, [recorder.isRecording, voiceSessionActive, voiceSessionError]);
+
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current !== null) {
+        window.clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+    };
+  }, []);
 
   return (
     <div className="app">
@@ -425,35 +735,96 @@ function App() {
           <div className="ingress-panel__copy">
             <h2>Voice Input</h2>
             <p>
-              Tap to record. VAD will auto-detect when you finish speaking.
+              Start a voice session to continuously detect speech, or use the quick capture button for a single take.
             </p>
           </div>
-          <div className="ingress-panel__controls">
-            <RecorderButton
-              isRecording={recorder.isRecording}
-              disabled={!ready || loopBusy}
-              onStart={() => {
-                void handleStartRecording();
-              }}
-              onStop={() => {
-                void handleStopRecording();
-              }}
-            />
-            <AudioVisualizer
-              rms={levelSnapshot.rms}
-              eqLevels={levelSnapshot.eq}
-              isActive={levelSnapshot.isActive}
-            />
-            <div className="ingress-panel__transcript">
+          <div className="voice-session__controls">
+            <div className="voice-session__buttons">
+              <button
+                type="button"
+                className={`voice-session__button ${voiceSessionActive ? "voice-session__button--stop" : ""}`}
+                onClick={() => {
+                  if (voiceSessionActive) {
+                    stopVoiceSession();
+                  } else {
+                    startVoiceSession();
+                  }
+                }}
+                disabled={!ready && !voiceSessionActive}
+              >
+                {voiceSessionActive ? "Stop session" : "Start session"}
+              </button>
+              <button
+                type="button"
+                className="voice-session__button voice-session__button--ghost"
+                onClick={forceVoiceSendoff}
+                disabled={!voiceSessionActive || segmentPending || pipelineBusy}
+              >
+                {voiceSessionActionLabel}
+              </button>
+            </div>
+            <div className="voice-session__status-banner">
               <div>
-                <p className="ingress-panel__label">Partial</p>
-                <p className="ingress-panel__text">{partialText || "\u00A0"}</p>
+                <p className="voice-session__label">Session status</p>
+                <p className="voice-session__status-text">{voiceSessionStatus}</p>
               </div>
+              <span className={`voice-session__pill voice-session__pill--${voiceSessionPhase}`}>
+                {sessionPhaseLabel}
+              </span>
+            </div>
+            <div className="voice-session__visual-row">
+              <AudioVisualizer
+                rms={levelSnapshot.rms}
+                eqLevels={levelSnapshot.eq}
+                isActive={levelSnapshot.isActive}
+              />
+              <div className="ingress-panel__transcript">
+                <div>
+                  <p className="ingress-panel__label">Partial</p>
+                  <p className="ingress-panel__text">{partialText || "\u00A0"}</p>
+                </div>
+                <div>
+                  <p className="ingress-panel__label">Final</p>
+                  <p className="ingress-panel__text">{finalText || "\u00A0"}</p>
+                </div>
+                {voiceSessionActive && voiceSessionError && (
+                  <p className="transcript-error">{voiceSessionError}</p>
+                )}
+                {!voiceSessionActive && whisperError && (
+                  <p className="transcript-error">{whisperError}</p>
+                )}
+              </div>
+            </div>
+            <WaveformVisualizer audioBuffer={capturedAudioBuffer} width={800} height={150} />
+            {detectedUtterances.length > 0 && (
+              <div className="voice-session__utterances">
+                <p className="voice-session__label">Detected sentences</p>
+                <ul className="voice-session__utterances-list">
+                  {detectedUtterances.map((utterance, index) => (
+                    <li key={`${utterance}-${index}`} className="voice-session__utterance">
+                      {utterance}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="voice-session__manual">
               <div>
-                <p className="ingress-panel__label">Final</p>
-                <p className="ingress-panel__text">{finalText || "\u00A0"}</p>
+                <p className="voice-session__label">Quick capture</p>
+                <p className="voice-session__hint">
+                  Need a one-off prompt outside the session? Trigger a manual capture here.
+                </p>
               </div>
-              {whisperError && <p className="transcript-error">{whisperError}</p>}
+              <RecorderButton
+                isRecording={recorder.isRecording && !voiceSessionActive}
+                disabled={!ready || loopBusy || voiceSessionActive}
+                onStart={() => {
+                  void handleStartRecording();
+                }}
+                onStop={() => {
+                  void handleStopRecording();
+                }}
+              />
             </div>
           </div>
         </section>

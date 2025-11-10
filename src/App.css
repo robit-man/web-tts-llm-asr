@@ -98,6 +98,156 @@ body {
   gap: 0.75rem;
 }
 
+.voice-session__controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.voice-session__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.voice-session__button {
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: linear-gradient(90deg, #0ea5e9, #6366f1);
+  color: #f8fafc;
+  font-weight: 600;
+  padding: 0.55rem 1.4rem;
+  cursor: pointer;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.voice-session__button--stop {
+  background: linear-gradient(90deg, #fb7185, #f97316);
+  border-color: rgba(249, 113, 99, 0.5);
+}
+
+.voice-session__button--ghost {
+  background: transparent;
+  border-style: dashed;
+  color: rgba(226, 232, 240, 0.85);
+}
+
+.voice-session__button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.voice-session__status-banner {
+  border-radius: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  padding: 0.9rem 1rem;
+  background: rgba(2, 6, 23, 0.6);
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.voice-session__label {
+  margin: 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.voice-session__status-text {
+  margin: 0.25rem 0 0;
+  color: rgba(248, 250, 252, 0.95);
+  font-size: 1rem;
+}
+
+.voice-session__pill {
+  border-radius: 999px;
+  padding: 0.25rem 1rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  color: rgba(226, 232, 240, 0.85);
+  white-space: nowrap;
+}
+
+.voice-session__pill--listening {
+  border-color: rgba(56, 189, 248, 0.7);
+  color: #38bdf8;
+}
+
+.voice-session__pill--processing,
+.voice-session__pill--transcribing {
+  border-color: rgba(196, 181, 253, 0.6);
+  color: #c084fc;
+}
+
+.voice-session__pill--responding {
+  border-color: rgba(251, 191, 36, 0.6);
+  color: #fbbf24;
+}
+
+.voice-session__pill--speaking {
+  border-color: rgba(52, 211, 153, 0.6);
+  color: #34d399;
+}
+
+.voice-session__pill--error {
+  border-color: rgba(248, 113, 113, 0.6);
+  color: #f87171;
+}
+
+.voice-session__visual-row {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.voice-session__utterances {
+  border-radius: 1rem;
+  border: 1px dashed rgba(148, 163, 184, 0.35);
+  padding: 0.9rem 1rem;
+  background: rgba(2, 6, 23, 0.6);
+}
+
+.voice-session__utterances-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.6rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.voice-session__utterance {
+  border-radius: 0.7rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  padding: 0.45rem 0.6rem;
+  background: rgba(15, 23, 42, 0.7);
+  color: rgba(248, 250, 252, 0.95);
+}
+
+.voice-session__manual {
+  border-radius: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  padding: 0.9rem 1rem;
+  background: rgba(2, 6, 23, 0.55);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.voice-session__hint {
+  margin: 0.2rem 0 0;
+  font-size: 0.85rem;
+  color: rgba(148, 163, 184, 0.9);
+}
+
 .ingress-panel__transcript {
   border-radius: 1rem;
   border: 1px solid rgba(148, 163, 184, 0.25);
@@ -435,5 +585,13 @@ body {
 
   .recorder-button {
     width: 100%;
+  }
+
+  .voice-session__visual-row {
+    grid-template-columns: 1fr;
+  }
+
+  .voice-session__buttons {
+    flex-direction: column;
   }
 }

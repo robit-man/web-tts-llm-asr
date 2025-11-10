@@ -94,6 +94,7 @@ async function ensureTranscriber() {
 
     transcriberPromise = pipeline("automatic-speech-recognition", effectiveModelId, {
       quantized: true,
+      revision: effectiveModelId.includes('/whisper-medium') ? 'no_attentions' : 'main',
       progress_callback: (progress: {
         progress?: number;
         text?: string;
@@ -187,9 +188,27 @@ ctx.addEventListener("message", async (event: MessageEvent<WhisperRequest>) => {
   }
 
   if (data.type === "transcribe-batch") {
+    console.log('[Worker] transcribe-batch received:', {
+      id: data.id,
+      audioLength: data.audio.length,
+      audioByteLength: data.audio.byteLength,
+      audioType: data.audio.constructor.name,
+      rms: Math.sqrt(data.audio.reduce((sum: number, val: number) => sum + val * val, 0) / data.audio.length)
+    });
+
     try {
       const result = await transcribeAudio(data.id, data.audio, { stream: false });
+
+      console.log('[Worker] transcribeAudio result:', {
+        id: data.id,
+        hasResult: !!result,
+        text: result?.text,
+        textLength: result?.text?.length,
+        chunksCount: result?.chunks?.length
+      });
+
       if (!result) {
+        console.log('[Worker] No transcription result, sending error');
         ctx.postMessage({
           type: "error",
           model: "whisper",
@@ -199,6 +218,11 @@ ctx.addEventListener("message", async (event: MessageEvent<WhisperRequest>) => {
         return;
       }
 
+      console.log('[Worker] Sending transcription complete:', {
+        id: data.id,
+        text: result.text
+      });
+
       ctx.postMessage({
         type: "transcription",
         id: data.id,
@@ -206,6 +230,7 @@ ctx.addEventListener("message", async (event: MessageEvent<WhisperRequest>) => {
         chunks: result.chunks,
       } satisfies CompleteMessage);
     } catch (error) {
+      console.error('[Worker] Transcription error:', error);
       ctx.postMessage({
         type: "error",
         model: "whisper",
@@ -255,13 +280,24 @@ async function transcribeAudio(
     suppressComplete?: boolean;
   },
 ) {
+  console.log('[Worker] transcribeAudio called:', {
+    id,
+    audioLength: audio.length,
+    audioByteLength: audio.byteLength,
+    options,
+    selectedModelId
+  });
+
   const isDistilWhisper = selectedModelId.startsWith("distil-whisper/");
   ensureModelUpToDate();
 
   const transcriberInstance = await ensureTranscriber();
   if (!transcriberInstance) {
+    console.log('[Worker] transcriberInstance is null!');
     return null;
   }
+
+  console.log('[Worker] Transcriber ready, starting inference...');
 
   const timePrecision =
     transcriberInstance.processor.feature_extractor.config.chunk_length /
@@ -292,6 +328,11 @@ async function transcribeAudio(
   function callbackFunction(item: [{ output_token_ids: number[] }]) {
     const last = chunksToProcess[chunksToProcess.length - 1];
     last.tokens = [...item[0].output_token_ids];
+    console.log('[Worker] callbackFunction - tokens:', {
+      tokensLength: last.tokens.length,
+      tokens: last.tokens,
+      allTokensInChunks: chunksToProcess.map(c => c.tokens)
+    });
     if (options?.suppressUpdate) {
       return;
     }
@@ -299,6 +340,10 @@ async function transcribeAudio(
       time_precision: timePrecision,
       return_timestamps: true,
       force_full_sequences: false,
+    });
+    console.log('[Worker] callbackFunction - decoded:', {
+      text: data[0],
+      chunksCount: data[1].chunks.length
     });
     ctx.postMessage({
       type: "update",
@@ -309,18 +354,21 @@ async function transcribeAudio(
     } satisfies UpdateMessage);
   }
 
+  console.log('[Worker] Calling transcriber with audio length:', audio.length);
+
   const output = await transcriberInstance(audio, {
     top_k: 0,
     do_sample: false,
     chunk_length_s: isDistilWhisper ? 20 : 30,
     stride_length_s: isDistilWhisper ? 3 : 5,
-    language: "en",
-    task: "transcribe",
+    language: undefined,
+    task: undefined,
     return_timestamps: true,
     force_full_sequences: false,
     callback_function: callbackFunction,
     chunk_callback: chunkCallback,
   }).catch((error: unknown) => {
+    console.error('[Worker] Transcription failed:', error);
     ctx.postMessage({
       type: "error",
       model: "whisper",
@@ -331,7 +379,14 @@ async function transcribeAudio(
     return null;
   });
 
+  console.log('[Worker] Transcriber returned:', {
+    hasOutput: !!output,
+    text: output?.text,
+    chunksCount: output?.chunks?.length
+  });
+
   if (!output) {
+    console.log('[Worker] Output is null, returning null');
     return null;
   }
 

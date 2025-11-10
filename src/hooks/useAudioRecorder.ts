@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface LevelSnapshot {
   rms: number;
@@ -7,7 +7,7 @@ export interface LevelSnapshot {
 }
 
 interface UseAudioRecorderOptions {
-  onRecordingComplete: (blob: Blob) => void;
+  onRecordingComplete: (blob: Blob | null) => void;
   onLevels?: (snapshot: LevelSnapshot) => void;
   onAudioChunk?: (chunk: Float32Array) => void;
   eqBands?: number;
@@ -16,6 +16,8 @@ interface UseAudioRecorderOptions {
   maxRecordingMs?: number;
   silenceDurationMs?: number;
 }
+
+type StopReason = 'manual' | 'silence' | 'max_duration';
 
 const DEFAULT_EQ_BANDS = 6;
 const DEFAULT_MIN_RECORDING_MS = 450;
@@ -69,6 +71,7 @@ export function useAudioRecorder({
   const accumulatedSilenceRef = useRef(0);
   const eqUpdateTimeRef = useRef(0);
   const eqLevelsRef = useRef<number[]>(Array(eqBands).fill(6));
+  const stopReasonRef = useRef<StopReason>('manual');
 
   const stopMonitor = useCallback(() => {
     if (monitorRafRef.current !== null) {
@@ -104,6 +107,7 @@ export function useAudioRecorder({
     speechActiveRef.current = false;
     silenceTriggeredRef.current = false;
     noiseFloorRef.current = 0.0008;
+    stopReasonRef.current = 'manual';
   }, [releaseAudioResources]);
 
   const initializeAnalyser = useCallback(
@@ -172,22 +176,34 @@ export function useAudioRecorder({
     [onAudioChunk],
   );
 
-  const stop = useCallback(() => {
-    if (!isRecording) return;
-
+  const stop = useCallback((reason: StopReason = 'manual') => {
     const recorder = recorderRef.current;
-    if (recorder && recorder.state === 'recording') {
-      recorder.stop();
+    if (!recorder || recorder.state !== 'recording') {
+      console.log('[Recorder] stop() called but not recording:', {
+        hasRecorder: !!recorder,
+        state: recorder?.state,
+        reason
+      });
+      return;
     }
 
-    setIsRecording(false);
+    console.log('[Recorder] Stopping recording:', {
+      reason,
+      chunksBeforeStop: chunksRef.current.length,
+      recorderState: recorder.state
+    });
+
+    stopReasonRef.current = reason;
     speechActiveRef.current = false;
     silenceTriggeredRef.current = false;
-    stopMonitor();
-  }, [isRecording, stopMonitor]);
+
+    // Don't kill monitoring or state - let the 'stop' event handler manage it
+    recorder.stop();
+  }, []);
 
   const startMonitoringLevels = useCallback(() => {
-    if (!isRecording || !analyserRef.current) {
+    // Monitor continuously while stream exists, not just while recording (like Cygnus)
+    if (!analyserRef.current) {
       stopMonitor();
       return;
     }
@@ -197,7 +213,7 @@ export function useAudioRecorder({
     const frequencyBuffer = new Uint8Array(analyser.frequencyBinCount);
 
     const detect = () => {
-      if (!isRecording || !analyserRef.current) {
+      if (!analyserRef.current) {
         monitorRafRef.current = null;
         return;
       }
@@ -217,44 +233,54 @@ export function useAudioRecorder({
       const dynamicThreshold = Math.max(noiseFloorRef.current * 1.8, 0.0008);
       const silenceThreshold = Math.max(dynamicThreshold * 0.6, noiseFloorRef.current * 1.2);
       const frameDurationMs = (analyser.fftSize / analyser.context.sampleRate) * 1000;
-      const isCurrentlyActive = speechActiveRef.current || rms > dynamicThreshold;
+      const isRecorderRecording = recorderRef.current?.state === 'recording';
+      const isCurrentlyActive = isRecorderRecording && (speechActiveRef.current || rms > dynamicThreshold);
 
       // Update EQ visualization
       if (now - eqUpdateTimeRef.current > 90) {
         eqUpdateTimeRef.current = now;
-        const nyquist = analyser.context.sampleRate / 2;
-        const binCount = analyser.frequencyBinCount;
-        let peakNormalized = 0;
-        const previousLevels = eqLevelsRef.current;
-        const nextLevels = Array.from({ length: eqBands }, (_, index) => {
-          const bandStartHz = MIN_FREQUENCY + ((MAX_FREQUENCY - MIN_FREQUENCY) / eqBands) * index;
-          const bandEndHz = MIN_FREQUENCY + ((MAX_FREQUENCY - MIN_FREQUENCY) / eqBands) * (index + 1);
-          const minIndex = Math.max(0, Math.floor((bandStartHz / nyquist) * binCount));
-          const maxIndex = Math.min(binCount - 1, Math.floor((bandEndHz / nyquist) * binCount));
-          let sum = 0;
-          let samples = 0;
-          for (let i = minIndex; i <= maxIndex; i += 1) {
-            const magnitude = frequencyBuffer[i];
-            if (Number.isFinite(magnitude)) {
-              sum += magnitude;
-              samples += 1;
+        if (isRecorderRecording) {
+          const nyquist = analyser.context.sampleRate / 2;
+          const binCount = analyser.frequencyBinCount;
+          let peakNormalized = 0;
+          const previousLevels = eqLevelsRef.current;
+          const nextLevels = Array.from({ length: eqBands }, (_, index) => {
+            const bandStartHz = MIN_FREQUENCY + ((MAX_FREQUENCY - MIN_FREQUENCY) / eqBands) * index;
+            const bandEndHz = MIN_FREQUENCY + ((MAX_FREQUENCY - MIN_FREQUENCY) / eqBands) * (index + 1);
+            const minIndex = Math.max(0, Math.floor((bandStartHz / nyquist) * binCount));
+            const maxIndex = Math.min(binCount - 1, Math.floor((bandEndHz / nyquist) * binCount));
+            let sum = 0;
+            let samples = 0;
+            for (let i = minIndex; i <= maxIndex; i += 1) {
+              const magnitude = frequencyBuffer[i];
+              if (Number.isFinite(magnitude)) {
+                sum += magnitude;
+                samples += 1;
+              }
             }
-          }
-          const avgMagnitude = samples > 0 ? sum / samples : 0;
-          const normalized = Math.min(1, avgMagnitude / 255);
-          peakNormalized = Math.max(peakNormalized, normalized);
-          const targetHeight = isCurrentlyActive ? 18 + normalized * 90 : 6 + normalized * 28;
-          const previousHeight = previousLevels[index] ?? 6;
-          const smoothed = previousHeight * EQ_DECAY + targetHeight * (1 - EQ_DECAY);
-          return Math.max(6, smoothed);
-        });
+            const avgMagnitude = samples > 0 ? sum / samples : 0;
+            const normalized = Math.min(1, avgMagnitude / 255);
+            peakNormalized = Math.max(peakNormalized, normalized);
+            const targetHeight = isCurrentlyActive ? 18 + normalized * 90 : 6 + normalized * 28;
+            const previousHeight = previousLevels[index] ?? 6;
+            const smoothed = previousHeight * EQ_DECAY + targetHeight * (1 - EQ_DECAY);
+            return Math.max(6, smoothed);
+          });
 
-        eqLevelsRef.current = nextLevels;
-        onLevels?.({
-          rms,
-          eq: nextLevels,
-          isActive: peakNormalized > EQ_THRESHOLD,
-        });
+          eqLevelsRef.current = nextLevels;
+          onLevels?.({
+            rms,
+            eq: nextLevels,
+            isActive: peakNormalized > EQ_THRESHOLD,
+          });
+        } else {
+          eqLevelsRef.current = eqLevelsRef.current.map(() => 4);
+          onLevels?.({
+            rms,
+            eq: eqLevelsRef.current,
+            isActive: false,
+          });
+        }
       }
 
       // VAD logic
@@ -276,19 +302,24 @@ export function useAudioRecorder({
               !silenceTriggeredRef.current &&
               accumulatedSilenceRef.current >= silenceDurationMs &&
               rms < silenceThreshold &&
-              recordingElapsed > minRecordingMs
+              recordingElapsed > minRecordingMs &&
+              recorderRef.current?.state === 'recording'
             ) {
               silenceTriggeredRef.current = true;
               speechActiveRef.current = false;
               accumulatedSilenceRef.current = 0;
-              stop();
+              stop('silence');
             }
           }
         }
 
         // Max duration check
-        if (now - recordingStartedAtRef.current > maxRecordingMs) {
-          stop();
+        if (
+          recorderRef.current?.state === 'recording' &&
+          recordingStartedAtRef.current &&
+          now - recordingStartedAtRef.current > maxRecordingMs
+        ) {
+          stop('max_duration');
         }
       }
 
@@ -297,10 +328,9 @@ export function useAudioRecorder({
 
     stopMonitor();
     monitorRafRef.current = requestAnimationFrame(detect);
-  }, [eqBands, enableVAD, isRecording, maxRecordingMs, minRecordingMs, onLevels, silenceDurationMs, stop, stopMonitor]);
+  }, [eqBands, enableVAD, maxRecordingMs, minRecordingMs, onLevels, silenceDurationMs, stop, stopMonitor]);
 
   const start = useCallback(async () => {
-    if (isRecording) return;
     setRecorderError(null);
 
     try {
@@ -328,23 +358,70 @@ export function useAudioRecorder({
 
       await initializeAnalyser(streamRef.current);
 
-      const recorder = new MediaRecorder(streamRef.current, { mimeType });
+      // Only create recorder once and reuse it (like Cygnus)
+      if (!recorderRef.current) {
+        const recorder = new MediaRecorder(streamRef.current, { mimeType });
 
-      recorder.addEventListener('dataavailable', (event) => {
-        if (event.data && event.data.size > 0) {
-          chunksRef.current.push(event.data);
-        }
-      });
+        recorder.addEventListener('dataavailable', (event) => {
+          console.log('[Recorder] dataavailable event:', {
+            size: event.data.size,
+            type: event.data.type,
+            totalChunks: chunksRef.current.length + 1
+          });
+          if (event.data && event.data.size > 0) {
+            chunksRef.current.push(event.data);
+          }
+        });
 
-      recorder.addEventListener('stop', () => {
-        if (chunksRef.current.length > 0) {
-          const blob = new Blob(chunksRef.current, { type: mimeType });
+        recorder.addEventListener('stop', () => {
+          const reason = stopReasonRef.current;
+          const shouldProcess = reason === 'silence' || reason === 'max_duration';
+
+          console.log('[Recorder] stop event:', {
+            reason,
+            shouldProcess,
+            chunksCount: chunksRef.current.length,
+            totalSize: chunksRef.current.reduce((sum, chunk) => sum + chunk.size, 0)
+          });
+
+          // Update state AFTER recorder has actually stopped
+          setIsRecording(false);
+
+          if (!shouldProcess) {
+            // Manually stopped - don't process, don't notify callback
+            console.log('[Recorder] Manual stop - not processing');
+            chunksRef.current = [];
+            stopReasonRef.current = 'manual';
+            return;
+          }
+
+          // VAD stopped - process the audio
+          const hasAudio = chunksRef.current.length > 0;
+          const blob = hasAudio
+            ? new Blob(chunksRef.current, { type: recorderRef.current?.mimeType || mimeType })
+            : null;
+
+          console.log('[Recorder] Created blob:', {
+            hasAudio,
+            blobSize: blob?.size,
+            blobType: blob?.type
+          });
+
           chunksRef.current = [];
+          stopReasonRef.current = 'manual';
           onRecordingComplete(blob);
-        }
-      });
+        });
 
-      recorderRef.current = recorder;
+        recorderRef.current = recorder;
+      }
+
+      const recorder = recorderRef.current;
+
+      // Don't start if already recording
+      if (recorder.state === 'recording') {
+        return;
+      }
+
       chunksRef.current = [];
       noiseFloorRef.current = Math.max(noiseFloorRef.current, 0.0008);
       recordingStartedAtRef.current = performance.now();
@@ -352,6 +429,12 @@ export function useAudioRecorder({
       speechActiveRef.current = false;
       silenceTriggeredRef.current = false;
       accumulatedSilenceRef.current = 0;
+
+      console.log('[Recorder] Starting recording:', {
+        state: recorder.state,
+        mimeType: recorder.mimeType,
+        stream: streamRef.current?.active
+      });
 
       recorder.start();
       setIsRecording(true);
@@ -361,7 +444,17 @@ export function useAudioRecorder({
       setRecorderError(error instanceof Error ? error.message : 'Unable to start recording.');
       cleanup();
     }
-  }, [cleanup, initializeAnalyser, isRecording, onRecordingComplete, startMonitoringLevels]);
+  }, [cleanup, initializeAnalyser, onRecordingComplete, startMonitoringLevels]);
+
+  // Cleanup on unmount - stop stream and release resources (like Cygnus line 655-672)
+  useEffect(() => {
+    return () => {
+      if (recorderRef.current?.state === 'recording') {
+        recorderRef.current.stop();
+      }
+      cleanup();
+    };
+  }, [cleanup]);
 
   return {
     isRecording,

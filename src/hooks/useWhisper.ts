@@ -91,6 +91,14 @@ export function useWhisperModel(initialModel = DEFAULT_MODEL) {
     const handleMessage = (event: MessageEvent<WhisperWorkerMessage>) => {
       const message = event.data;
 
+      console.log('[useWhisper] Message from worker:', {
+        type: message.type,
+        id: 'id' in message ? message.id : undefined,
+        model: 'model' in message ? message.model : undefined,
+        text: 'text' in message ? message.text : undefined,
+        textLength: 'text' in message ? message.text?.length : undefined
+      });
+
       if (message.type === "status" && message.model === "whisper") {
         setStatus((prev) => ({
           ...prev,
@@ -106,12 +114,21 @@ export function useWhisperModel(initialModel = DEFAULT_MODEL) {
       }
 
       if (message.type === "update") {
+        console.log('[useWhisper] Update message:', { text: message.text, chunksCount: message.chunks.length });
         setPartialText(message.text);
         setChunks(message.chunks);
         return;
       }
 
       if (message.type === "transcription") {
+        console.log('[useWhisper] Transcription complete:', {
+          id: message.id,
+          stream: message.stream,
+          text: message.text,
+          textLength: message.text.length,
+          chunksCount: message.chunks.length
+        });
+
         if (message.stream) {
           setPartialText(message.text);
           setFinalText(message.text);
@@ -126,11 +143,14 @@ export function useWhisperModel(initialModel = DEFAULT_MODEL) {
         }
         const handlers = pending.current.get(message.id);
         if (handlers) {
+          console.log('[useWhisper] Resolving promise for id:', message.id);
           handlers.resolve({
             text: message.text,
             chunks: message.chunks,
           });
           pending.current.delete(message.id);
+        } else {
+          console.warn('[useWhisper] No handler found for id:', message.id);
         }
         setPartialText(message.text);
         setFinalText(message.text);
@@ -142,6 +162,11 @@ export function useWhisperModel(initialModel = DEFAULT_MODEL) {
       }
 
       if (message.type === "error" && message.model === "whisper") {
+        console.error('[useWhisper] Error from worker:', {
+          id: message.id,
+          message: message.message
+        });
+
         if (message.id !== undefined) {
           const handlers = pending.current.get(message.id);
           if (handlers) {
@@ -212,26 +237,55 @@ export function useWhisperModel(initialModel = DEFAULT_MODEL) {
   }, []);
 
   const transcribeBatch = useCallback(async (blob: Blob) => {
+    console.log('[useWhisper] transcribeBatch called:', {
+      blobSize: blob.size,
+      blobType: blob.type
+    });
+
     if (!workerRef.current) {
       throw new Error("Whisper worker is not ready");
     }
 
     const arrayBuffer = await blob.arrayBuffer();
+    console.log('[useWhisper] Blob → ArrayBuffer:', {
+      byteLength: arrayBuffer.byteLength
+    });
+
     const audioContext = new AudioContext({ sampleRate: 16000 });
     let audioBuffer: AudioBuffer;
     try {
       audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+      console.log('[useWhisper] ArrayBuffer → AudioBuffer:', {
+        duration: audioBuffer.duration,
+        sampleRate: audioBuffer.sampleRate,
+        length: audioBuffer.length,
+        numberOfChannels: audioBuffer.numberOfChannels
+      });
     } finally {
       await audioContext.close();
     }
 
     const audio = audioBufferToFloat32(audioBuffer);
+    console.log('[useWhisper] AudioBuffer → Float32Array:', {
+      length: audio.length,
+      byteLength: audio.byteLength,
+      sampleRate: 16000,
+      duration: audio.length / 16000,
+      rms: Math.sqrt(audio.reduce((sum, val) => sum + val * val, 0) / audio.length)
+    });
+
     const id = requestId.current++;
     setIsTranscribing(true);
     setHookError(null);
     setPartialText("");
     setFinalText("");
     setChunks([]);
+
+    console.log('[useWhisper] Posting to worker:', {
+      id,
+      audioLength: audio.length,
+      workerReady: !!workerRef.current
+    });
 
     return await new Promise<{
       text: string;
