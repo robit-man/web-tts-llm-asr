@@ -1,0 +1,221 @@
+:root {
+  color: #e2e8f0;
+  background-color: #020617;
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(circle at 20% 20%, #0f172a, #020617 60%);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.app__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.app__header h1 {
+  margin: 0.4rem 0 0;
+  font-size: clamp(1.8rem, 3vw, 2.6rem);
+  line-height: 1.2;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.4em;
+  font-size: 0.75rem;
+  color: rgba(148, 163, 184, 0.8);
+  margin: 0;
+}
+
+.badge {
+  border-radius: 999px;
+  border: 1px solid rgba(226, 232, 240, 0.2);
+  padding: 0.4rem 0.9rem;
+  font-size: 0.85rem;
+  color: rgba(248, 250, 252, 0.85);
+}
+
+.lede {
+  margin-top: 0.7rem;
+  color: rgba(226, 232, 240, 0.8);
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.ingress-panel {
+  border-radius: 1.25rem;
+  padding: 1.2rem 1.5rem;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.ingress-panel h2 {
+  margin: 0 0 0.3rem;
+}
+
+.ingress-panel p {
+  margin: 0;
+  color: rgba(226, 232, 240, 0.75);
+}
+
+.recorder-button {
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #38bdf8, #818cf8);
+  color: #0f172a;
+  font-weight: 600;
+  padding: 0.85rem 1.4rem;
+  min-width: 180px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+.recorder-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.recorder-button--active {
+  background: linear-gradient(90deg, #fb7185, #f97316);
+  color: white;
+}
+
+.alert {
+  border-radius: 0.9rem;
+  padding: 0.9rem 1.1rem;
+  background: rgba(248, 113, 113, 0.15);
+  border: 1px solid rgba(248, 113, 113, 0.5);
+  color: #fecaca;
+}
+
+.alert--warning {
+  background: rgba(250, 204, 21, 0.15);
+  border-color: rgba(250, 204, 21, 0.5);
+  color: #fef3c7;
+}
+
+.status-pill {
+  border-radius: 999px;
+  border: 1px dashed rgba(148, 163, 184, 0.4);
+  padding: 0.35rem 0.9rem;
+  color: rgba(226, 232, 240, 0.7);
+  font-size: 0.9rem;
+  width: fit-content;
+}
+
+.conversation-log {
+  border-radius: 1.25rem;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  padding: 1.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 180px;
+}
+
+.conversation-log--empty {
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  color: rgba(226, 232, 240, 0.7);
+}
+
+.conversation-log__item {
+  border-radius: 1rem;
+  padding: 0.9rem 1rem;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.conversation-log__item--assistant {
+  background: rgba(56, 189, 248, 0.08);
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+.conversation-log__role {
+  margin: 0 0 0.3rem;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.2em;
+  color: rgba(248, 250, 252, 0.7);
+}
+
+.conversation-log__content {
+  margin: 0;
+  color: rgba(248, 250, 252, 0.95);
+  line-height: 1.4;
+}
+
+.player {
+  border-radius: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  padding: 0.9rem 1rem;
+  background: rgba(15, 23, 42, 0.85);
+}
+
+.player p {
+  margin: 0 0 0.3rem;
+  color: rgba(226, 232, 240, 0.85);
+}
+
+.player audio {
+  width: 100%;
+}
+
+.app__footer {
+  font-size: 0.85rem;
+  color: rgba(148, 163, 184, 0.8);
+  border-top: 1px solid rgba(148, 163, 184, 0.15);
+  padding-top: 1rem;
+  margin-top: 1rem;
+}
+
+@media (max-width: 720px) {
+  .app__header {
+    flex-direction: column;
+  }
+
+  .ingress-panel {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .recorder-button {
+    width: 100%;
+  }
+}
