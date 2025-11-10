@@ -61,9 +61,7 @@ function App() {
     status: whisperStatus,
     isTranscribing,
     transcribe,
-    startStream,
-    pushStreamChunk,
-    finishStream,
+    transcribeBatch,
     model: whisperModel,
     setModel: setWhisperModel,
     partialText,
@@ -273,15 +271,12 @@ function App() {
     [ingressMode, processMessage, speak, updateSpeechUrl],
   );
 
-  const handleAudioChunk = useCallback((chunk: Float32Array) => {
-    pushStreamChunk(chunk);
-  }, [pushStreamChunk]);
-
-  const handleRecordingComplete = useCallback(async (_blob: Blob) => {
+  const handleRecordingComplete = useCallback(async (blob: Blob) => {
     setAlert(null);
     setIsProcessing(true);
     try {
-      const result = await finishStream();
+      // Use batch mode for immediate token-level updates like Cygnus
+      const result = await transcribeBatch(blob);
       if (result && result.text.trim()) {
         await processMessage(result.text.trim());
       } else {
@@ -292,12 +287,12 @@ function App() {
     } finally {
       setIsProcessing(false);
     }
-  }, [finishStream, processMessage]);
+  }, [transcribeBatch, processMessage]);
 
   const recorder = useAudioRecorder({
     onRecordingComplete: handleRecordingComplete,
     onLevels: setLevelSnapshot,
-    onAudioChunk: handleAudioChunk,
+    // Remove onAudioChunk - we don't need streaming chunks for batch mode
     enableVAD: true,
     silenceDurationMs: 1200,
   });
@@ -310,12 +305,11 @@ function App() {
 
   const handleStartRecording = useCallback(async () => {
     try {
-      await startStream();
       await recorder.start();
     } catch (error) {
       setAlert((error as Error).message ?? "Unable to access microphone.");
     }
-  }, [recorder, startStream]);
+  }, [recorder]);
 
   const handleStopRecording = useCallback(() => {
     recorder.stop();
