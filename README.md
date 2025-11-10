@@ -10,7 +10,7 @@ A progressive web application that unifies three browser-native ML stacks:
 
 The UI preloads all three models, surfaces their status, and then runs a hands-free loop: *record speech → transcribe → build an LLM response → render the answer with Piper*. Everything stays inside the browser and the app installs as a PWA.
 
-Live RMS tracking, a 6-band equalizer, and silence detection mirror the microphone HUD shipped in `/home/robit/Respositories/Cygnus-App-Replit-1`, so the recorder auto-pauses a little over a second after you stop speaking. Whisper and Piper models can be swapped from dropdowns before each turn (again mirroring the Cygnus demo’s UX).
+Live RMS tracking, a 6-band equalizer, and silence detection mirror the microphone HUD so the recorder auto-pauses a little over a second after you stop speaking. Whisper and Piper models can be swapped from dropdowns before each turn.
 
 ## Getting started
 
