@@ -43,8 +43,10 @@ export function useAudioRecorder({
   const frequencyDataRef = useRef<ByteAnalyserArray | null>(null);
   const monitorRafRef = useRef<number | null>(null);
   const noiseFloorRef = useRef(0.001);
-  const lastSpeechRef = useRef<number>(0);
-  const recordingStartRef = useRef<number>(0);
+  const recordingStartedAtRef = useRef<number | null>(null);
+  const accumulatedSilenceRef = useRef(0);
+  const speechActiveRef = useRef(false);
+  const silenceTriggeredRef = useRef(false);
 
   const eqStateRef = useRef<number[]>(Array(eqBands).fill(4));
 
@@ -76,11 +78,15 @@ export function useAudioRecorder({
       streamRef.current = null;
     }
     resetLevels();
+    recordingStartedAtRef.current = null;
+    accumulatedSilenceRef.current = 0;
+    speechActiveRef.current = false;
+    silenceTriggeredRef.current = false;
   }, [resetLevels, stopMonitor]);
 
   const updateLevels = useCallback(() => {
     const analyser = analyserRef.current;
-    if (!analyser) return;
+    if (!analyser) return null;
 
     if (!analyserDataRef.current || analyserDataRef.current.length !== analyser.fftSize) {
       analyserDataRef.current = new Float32Array(analyser.fftSize) as FloatAnalyserArray;
@@ -107,10 +113,10 @@ export function useAudioRecorder({
       noiseFloorRef.current * (1 - smoothing) + rms * smoothing || noiseFloorRef.current;
 
     const dynamicThreshold = Math.max(noiseFloorRef.current * 1.8, 0.0008);
-    const isActive = rms > dynamicThreshold;
-    if (isActive) {
-      lastSpeechRef.current = performance.now();
-    }
+    const silenceThreshold = Math.max(dynamicThreshold * 0.6, noiseFloorRef.current * 1.2);
+    const frameDurationMs = (analyser.fftSize / analyser.context.sampleRate) * 1000;
+    const recorderActive = mediaRecorderRef.current?.state === "recording";
+    const isActive = recorderActive && (speechActiveRef.current || rms > dynamicThreshold);
 
     const nyquist = analyser.context.sampleRate / 2;
     const binCount = analyser.frequencyBinCount;
@@ -135,26 +141,65 @@ export function useAudioRecorder({
     }
     eqStateRef.current = nextLevels;
     onLevels?.({ rms, eq: nextLevels, isActive });
+
+    return {
+      rms,
+      dynamicThreshold,
+      silenceThreshold,
+      frameDurationMs,
+      recorderActive,
+    };
   }, [eqBands, onLevels]);
 
   const startMonitor = useCallback(() => {
     stopMonitor();
     const tick = () => {
-      updateLevels();
-
+      const metrics = updateLevels();
       const now = performance.now();
-      const recorderActive = mediaRecorderRef.current?.state === "recording";
-      if (
-        recorderActive &&
-        now - lastSpeechRef.current > silenceDurationMs &&
-        now - recordingStartRef.current > minRecordingMs
-      ) {
-        mediaRecorderRef.current?.stop();
-      } else if (recorderActive && now - recordingStartRef.current > maxRecordingMs) {
-        mediaRecorderRef.current?.stop();
-      } else if (recorderActive) {
-        monitorRafRef.current = requestAnimationFrame(tick);
+      const recorderActive = metrics?.recorderActive ?? false;
+
+      if (metrics && recorderActive) {
+        const { rms, dynamicThreshold, silenceThreshold, frameDurationMs } = metrics;
+
+        if (rms > dynamicThreshold) {
+          speechActiveRef.current = true;
+          accumulatedSilenceRef.current = 0;
+          noiseFloorRef.current = Math.min(noiseFloorRef.current * 0.9 + rms * 0.1, 0.02);
+          silenceTriggeredRef.current = false;
+        } else {
+          if (!speechActiveRef.current) {
+            noiseFloorRef.current = noiseFloorRef.current * 0.92 + rms * 0.08;
+          } else {
+            accumulatedSilenceRef.current += frameDurationMs;
+            const startedAt = recordingStartedAtRef.current ?? now;
+            const elapsed = now - startedAt;
+            if (
+              !silenceTriggeredRef.current &&
+              accumulatedSilenceRef.current >= silenceDurationMs &&
+              rms < silenceThreshold &&
+              elapsed > minRecordingMs
+            ) {
+              silenceTriggeredRef.current = true;
+              speechActiveRef.current = false;
+              accumulatedSilenceRef.current = 0;
+              mediaRecorderRef.current?.stop();
+              monitorRafRef.current = null;
+              return;
+            }
+          }
+        }
+
+        const startedAt = recordingStartedAtRef.current ?? now;
+        if (now - startedAt > maxRecordingMs) {
+          silenceTriggeredRef.current = true;
+          speechActiveRef.current = false;
+          mediaRecorderRef.current?.stop();
+          monitorRafRef.current = null;
+          return;
+        }
       }
+
+      monitorRafRef.current = requestAnimationFrame(tick);
     };
     monitorRafRef.current = requestAnimationFrame(tick);
   }, [maxRecordingMs, minRecordingMs, silenceDurationMs, stopMonitor, updateLevels]);
@@ -177,8 +222,10 @@ export function useAudioRecorder({
       source.connect(analyser);
       analyserRef.current = analyser;
       audioContextRef.current = audioContext;
-      recordingStartRef.current = performance.now();
-      lastSpeechRef.current = recordingStartRef.current;
+      recordingStartedAtRef.current = performance.now();
+      accumulatedSilenceRef.current = 0;
+      speechActiveRef.current = false;
+      silenceTriggeredRef.current = false;
 
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
