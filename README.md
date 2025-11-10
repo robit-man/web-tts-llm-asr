@@ -1,3 +1,5 @@
+<img width="1013" height="1759" alt="image" src="https://github.com/user-attachments/assets/e2fecd1c-0f63-4001-8eec-b5f5d93ca626" />
+
 # Trifecta Voice Lab
 
 A progressive web application that unifies three browser-native ML stacks:
