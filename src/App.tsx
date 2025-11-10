@@ -9,6 +9,7 @@ import { useAudioRecorder, type LevelSnapshot } from "./hooks/useAudioRecorder";
 import { useWhisperModel } from "./hooks/useWhisper";
 import { useWebLLM } from "./hooks/useWebLLM";
 import { usePiperModel } from "./hooks/usePiper";
+import { TARGET_SAMPLE_RATE } from "./utils/audio";
 import type { ConversationTurn, ModelStatus } from "./types/models";
 
 const SYSTEM_PROMPT =
@@ -19,9 +20,9 @@ const statusSort = (a: ModelStatus, b: ModelStatus) =>
   ["whisper", "webllm", "piper"].indexOf(b.model);
 
 const WHISPER_OPTIONS = [
-  { id: "Xenova/whisper-tiny.en", label: "Whisper Tiny (~75 MB)" },
-  { id: "Xenova/whisper-base.en", label: "Whisper Base (~142 MB)" },
-  { id: "Xenova/whisper-small.en", label: "Whisper Small (~462 MB)" },
+  { id: "Xenova/whisper-tiny", label: "Whisper Tiny (~75 MB)" },
+  { id: "Xenova/whisper-base", label: "Whisper Base (~142 MB)" },
+  { id: "Xenova/whisper-small", label: "Whisper Small (~462 MB)" },
 ];
 
 function App() {
@@ -35,6 +36,11 @@ function App() {
     transcribe,
     model: whisperModel,
     setModel: setWhisperModel,
+    partialText,
+    finalText,
+    chunks,
+    error: whisperError,
+    setManualTranscript,
   } = whisper;
   const { status: llmStatus, generate, isResponding } = llm;
   const {
@@ -57,6 +63,9 @@ function App() {
     eq: Array(6).fill(6),
     isActive: false,
   });
+  const [ingressMode, setIngressMode] = useState<"llm" | "tts">("llm");
+  const whisperPrimedRef = useRef(false);
+  const whisperPrimingRef = useRef(false);
 
   const statuses = useMemo(() => {
     return [whisperStatus, llmStatus, piperStatus].slice().sort(statusSort);
@@ -139,6 +148,37 @@ function App() {
     [generate, speak, updateSpeechUrl],
   );
 
+  const runManualLoop = useCallback(
+    async (text: string) => {
+      const content = text.trim();
+      if (!content) {
+        return;
+      }
+      setManualTranscript(content);
+      setAlert(null);
+      setIsProcessing(true);
+      try {
+        if (ingressMode === "llm") {
+          await processMessage(content);
+        } else {
+          const url = await speak(content);
+          updateSpeechUrl(url);
+        }
+        setManualInput("");
+      } catch (error) {
+        setAlert(
+          (error as Error).message ??
+            (ingressMode === "llm"
+              ? "Unable to process your typed request."
+              : "Unable to synthesize speech."),
+        );
+      } finally {
+        setIsProcessing(false);
+      }
+    },
+    [ingressMode, processMessage, setManualTranscript, speak, updateSpeechUrl],
+  );
+
   const runLoop = useCallback(
     async (audioBuffer: AudioBuffer) => {
       setAlert(null);
@@ -168,6 +208,28 @@ function App() {
     onComplete: runLoop,
     onLevels: setLevelSnapshot,
   });
+
+  useEffect(() => {
+    if (
+      whisperStatus.state === "ready" &&
+      !whisperPrimedRef.current &&
+      !whisperPrimingRef.current
+    ) {
+      if (typeof AudioBuffer === "undefined") return;
+      whisperPrimingRef.current = true;
+      const silentBuffer = new AudioBuffer({
+        length: Math.max(1, Math.floor(TARGET_SAMPLE_RATE * 0.8)),
+        numberOfChannels: 1,
+        sampleRate: TARGET_SAMPLE_RATE,
+      });
+      transcribe(silentBuffer)
+        .catch(() => {})
+        .finally(() => {
+          whisperPrimedRef.current = true;
+          whisperPrimingRef.current = false;
+        });
+    }
+  }, [transcribe, whisperStatus.state]);
 
   return (
     <div className="app">
@@ -201,7 +263,7 @@ function App() {
           isRecording={recorder.isRecording}
           disabled={!ready || loopBusy}
           onStart={recorder.start}
-          onStop={recorder.stop}
+          onStop={() => recorder.stop("manual")}
         />
       </section>
 
@@ -209,8 +271,16 @@ function App() {
         <div>
           <h2>Textual ingress</h2>
           <p>
-            Prefer typing? Send crafted prompts directly into the same Whisper → LLM → Piper pipeline.
+            Prefer typing? Send crafted prompts directly into the same Whisper → LLM → Piper pipeline or flip the
+            toggle to speak the text immediately with Piper.
           </p>
+        </div>
+        <div className="textual-ingress__visual">
+          <AudioVisualizer
+            rms={levelSnapshot.rms}
+            eqLevels={levelSnapshot.eq}
+            isActive={levelSnapshot.isActive}
+          />
         </div>
         <form
           className="textual-ingress__form"
@@ -219,18 +289,7 @@ function App() {
             if (!manualInput.trim() || !ready || loopBusy) {
               return;
             }
-            setAlert(null);
-            setIsProcessing(true);
-            try {
-              await processMessage(manualInput.trim());
-              setManualInput("");
-            } catch (error) {
-              setAlert(
-                (error as Error).message ?? "Unable to process your typed request.",
-              );
-            } finally {
-              setIsProcessing(false);
-            }
+            await runManualLoop(manualInput.trim());
           }}
         >
           <textarea
@@ -240,10 +299,35 @@ function App() {
             onChange={(event) => setManualInput(event.target.value)}
             disabled={!ready || loopBusy}
           />
-          <button type="submit" disabled={!ready || loopBusy || !manualInput.trim()}>
-            Send to loop
-          </button>
+          <div className="textual-ingress__controls">
+            <label className="textual-ingress__toggle">
+              <input
+                type="checkbox"
+                checked={ingressMode === "tts"}
+                onChange={(event) => setIngressMode(event.target.checked ? "tts" : "llm")}
+                disabled={!ready || loopBusy}
+              />
+              <span>Send directly to Piper TTS</span>
+            </label>
+            <button type="submit" disabled={!ready || loopBusy || !manualInput.trim()}>
+              {ingressMode === "tts" ? "Speak text" : "Send to loop"}
+            </button>
+          </div>
         </form>
+      </section>
+      <section className="transcript-panel">
+        <div className="transcript-panel__row">
+          <h3>Partial transcript</h3>
+          <p>{partialText || (isTranscribing ? "Listening…" : "—")}</p>
+        </div>
+        <div className="transcript-panel__row">
+          <h3>Final transcript</h3>
+          <p>{finalText || "—"}</p>
+          <span className="transcript-panel__meta">
+            {chunks.length > 0 ? `${chunks.length} segment${chunks.length === 1 ? "" : "s"}` : "No segments yet"}
+          </span>
+        </div>
+        {whisperError && <p className="transcript-error">{whisperError}</p>}
       </section>
 
       <AudioVisualizer

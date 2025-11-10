@@ -252,6 +252,68 @@ body {
   cursor: not-allowed;
 }
 
+.textual-ingress__visual {
+  width: 100%;
+}
+
+.textual-ingress__controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.textual-ingress__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: rgba(226, 232, 240, 0.8);
+}
+
+.textual-ingress__toggle input {
+  width: 1rem;
+  height: 1rem;
+}
+
+.transcript-panel {
+  border-radius: 1.25rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(2, 6, 23, 0.55);
+  padding: 1rem 1.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.transcript-panel__row h3 {
+  margin: 0;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.transcript-panel__row p {
+  margin: 0.2rem 0 0;
+  font-size: 1rem;
+  color: rgba(248, 250, 252, 0.92);
+}
+
+.transcript-panel__meta {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: rgba(148, 163, 184, 0.7);
+}
+
+.transcript-error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #f87171;
+}
+
 .model-control {
   padding: 1rem 1.25rem;
   border-radius: 1.25rem;

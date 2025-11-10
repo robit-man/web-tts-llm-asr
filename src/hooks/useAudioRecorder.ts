@@ -47,6 +47,7 @@ export function useAudioRecorder({
   const accumulatedSilenceRef = useRef(0);
   const speechActiveRef = useRef(false);
   const silenceTriggeredRef = useRef(false);
+  const stopReasonRef = useRef<"manual" | "silence" | "external">("manual");
 
   const eqStateRef = useRef<number[]>(Array(eqBands).fill(4));
 
@@ -82,6 +83,7 @@ export function useAudioRecorder({
     accumulatedSilenceRef.current = 0;
     speechActiveRef.current = false;
     silenceTriggeredRef.current = false;
+    stopReasonRef.current = "manual";
   }, [resetLevels, stopMonitor]);
 
   const updateLevels = useCallback(() => {
@@ -182,6 +184,7 @@ export function useAudioRecorder({
               silenceTriggeredRef.current = true;
               speechActiveRef.current = false;
               accumulatedSilenceRef.current = 0;
+              stopReasonRef.current = "silence";
               mediaRecorderRef.current?.stop();
               monitorRafRef.current = null;
               return;
@@ -193,6 +196,7 @@ export function useAudioRecorder({
         if (now - startedAt > maxRecordingMs) {
           silenceTriggeredRef.current = true;
           speechActiveRef.current = false;
+          stopReasonRef.current = "silence";
           mediaRecorderRef.current?.stop();
           monitorRafRef.current = null;
           return;
@@ -235,19 +239,28 @@ export function useAudioRecorder({
 
       recorder.onstop = async () => {
         stopMonitor();
-        setIsRecording(false);
+        const reason = stopReasonRef.current;
         try {
-          const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-          const arrayBuffer = await blob.arrayBuffer();
-          const decodeContext = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
-          const audioBuffer = await decodeContext.decodeAudioData(arrayBuffer.slice(0));
-          await onComplete(audioBuffer);
-          await decodeContext.close();
+          if (reason === "silence") {
+            if (!chunksRef.current.length) {
+              throw new Error("No audio captured.");
+            }
+            const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+            const arrayBuffer = await blob.arrayBuffer();
+            const decodeContext = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
+            const audioBuffer = await decodeContext.decodeAudioData(arrayBuffer.slice(0));
+            await onComplete(audioBuffer);
+            await decodeContext.close();
+          }
         } catch (error) {
-          setRecorderError(
-            (error as Error).message ?? "Could not decode audio data",
-          );
+          if (reason === "silence") {
+            setRecorderError(
+              (error as Error).message ?? "Could not decode audio data",
+            );
+          }
         } finally {
+          stopReasonRef.current = "manual";
+          setIsRecording(false);
           await cleanup();
         }
       };
@@ -263,11 +276,15 @@ export function useAudioRecorder({
     }
   }, [cleanup, isRecording, onComplete, startMonitor, stopMonitor]);
 
-  const stop = useCallback(() => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-    }
-  }, [isRecording]);
+  const stop = useCallback(
+    (reason: "manual" | "silence" | "external" = "manual") => {
+      if (mediaRecorderRef.current && isRecording) {
+        stopReasonRef.current = reason;
+        mediaRecorderRef.current.stop();
+      }
+    },
+    [isRecording],
+  );
 
   return {
     isRecording,

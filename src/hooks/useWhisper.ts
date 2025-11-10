@@ -12,10 +12,16 @@ type WhisperWorkerMessage =
       progress?: number;
     }
   | {
+      type: "update";
+      id: number;
+      text: string;
+      chunks: { text: string; timestamp: [number, number | null] }[];
+    }
+  | {
       type: "transcription";
       id: number;
       text: string;
-      chunks: { text: string }[];
+      chunks: { text: string; timestamp: [number, number | null] }[];
     }
   | {
       type: "error";
@@ -24,7 +30,7 @@ type WhisperWorkerMessage =
       message: string;
     };
 
-const DEFAULT_MODEL = "Xenova/whisper-tiny.en";
+const DEFAULT_MODEL = "Xenova/whisper-tiny";
 
 export function useWhisperModel(initialModel = DEFAULT_MODEL) {
   const [status, setStatus] = useState<ModelStatus>({
@@ -35,13 +41,24 @@ export function useWhisperModel(initialModel = DEFAULT_MODEL) {
   });
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [modelId, setModelId] = useState(initialModel);
+  const [partialText, setPartialText] = useState("");
+  const [finalText, setFinalText] = useState("");
+  const [chunks, setChunks] = useState<
+    { text: string; timestamp: [number, number | null] }[]
+  >([]);
+  const [hookError, setHookError] = useState<string | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const requestId = useRef(0);
   const pending = useRef<
     Map<
       number,
       {
-        resolve: (value: { text: string; chunks: { text: string }[] }) => void;
+        resolve: (
+          value: {
+            text: string;
+            chunks: { text: string; timestamp: [number, number | null] }[];
+          },
+        ) => void;
         reject: (reason?: unknown) => void;
       }
     >
@@ -71,6 +88,12 @@ export function useWhisperModel(initialModel = DEFAULT_MODEL) {
         return;
       }
 
+      if (message.type === "update") {
+        setPartialText(message.text);
+        setChunks(message.chunks);
+        return;
+      }
+
       if (message.type === "transcription") {
         const handlers = pending.current.get(message.id);
         if (handlers) {
@@ -80,6 +103,9 @@ export function useWhisperModel(initialModel = DEFAULT_MODEL) {
           });
           pending.current.delete(message.id);
         }
+        setPartialText(message.text);
+        setFinalText(message.text);
+        setChunks(message.chunks);
         if (pending.current.size === 0) {
           setIsTranscribing(false);
         }
@@ -103,6 +129,7 @@ export function useWhisperModel(initialModel = DEFAULT_MODEL) {
             message: message.message,
           }));
         }
+        setHookError(message.message);
       }
     };
 
@@ -125,8 +152,15 @@ export function useWhisperModel(initialModel = DEFAULT_MODEL) {
     const audio = audioBufferToFloat32(buffer);
     const id = requestId.current++;
     setIsTranscribing(true);
+    setHookError(null);
+    setPartialText("");
+    setFinalText("");
+    setChunks([]);
 
-    return await new Promise<{ text: string; chunks: { text: string }[] }>(
+    return await new Promise<{
+      text: string;
+      chunks: { text: string; timestamp: [number, number | null] }[];
+    }>(
       (resolve, reject) => {
         pending.current.set(id, { resolve, reject });
         workerRef.current?.postMessage(
@@ -157,6 +191,13 @@ export function useWhisperModel(initialModel = DEFAULT_MODEL) {
     [modelId],
   );
 
+  const setManualTranscript = useCallback((text: string) => {
+    setPartialText(text);
+    setFinalText(text);
+    setChunks(text ? [{ text, timestamp: [0, null] }] : []);
+    setHookError(null);
+  }, []);
+
   return useMemo(
     () => ({
       status,
@@ -164,7 +205,23 @@ export function useWhisperModel(initialModel = DEFAULT_MODEL) {
       transcribe,
       model: modelId,
       setModel,
+      partialText,
+      finalText,
+      chunks,
+      error: hookError,
+      setManualTranscript,
     }),
-    [isTranscribing, modelId, setModel, status, transcribe],
+    [
+      chunks,
+      finalText,
+      hookError,
+      isTranscribing,
+      modelId,
+      partialText,
+      setManualTranscript,
+      setModel,
+      status,
+      transcribe,
+    ],
   );
 }
