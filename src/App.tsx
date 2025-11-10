@@ -15,6 +15,12 @@ import type { ConversationTurn, ModelStatus } from "./types/models";
 const SYSTEM_PROMPT =
   "You are the voice of a hands-free companion. Keep replies short (max three sentences), helpful, and speak in the first person.";
 
+const STORAGE_KEYS = {
+  WHISPER_MODEL: "whisper_model",
+  WEBLLM_MODEL: "webllm_model",
+  PIPER_VOICE: "piper_voice",
+} as const;
+
 const statusSort = (a: ModelStatus, b: ModelStatus) =>
   ["whisper", "webllm", "piper"].indexOf(a.model) -
   ["whisper", "webllm", "piper"].indexOf(b.model);
@@ -25,24 +31,53 @@ const WHISPER_OPTIONS = [
   { id: "Xenova/whisper-small", label: "Whisper Small (~462 MB)" },
 ];
 
+const WEBLLM_OPTIONS = [
+  { id: "Llama-3.2-1B-Instruct-q4f32_1-MLC", label: "Llama 3.2 1B (1.1 GB)", group: "Recommended" },
+  { id: "Llama-3.2-1B-Instruct-q4f16_1-MLC", label: "Llama 3.2 1B - Low Memory (879 MB)", group: "Recommended" },
+  { id: "Llama-3.2-3B-Instruct-q4f32_1-MLC", label: "Llama 3.2 3B (2.9 GB)", group: "Recommended" },
+  { id: "Llama-3.2-3B-Instruct-q4f16_1-MLC", label: "Llama 3.2 3B - Low Memory (2.3 GB)", group: "Recommended" },
+  { id: "Phi-3.5-mini-instruct-q4f16_1-MLC", label: "Phi 3.5 Mini (2.7 GB)", group: "Recommended" },
+  { id: "Qwen2.5-0.5B-Instruct-q4f16_1-MLC", label: "Qwen 2.5 0.5B (512 MB)", group: "Lightweight" },
+  { id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC", label: "Qwen 2.5 1.5B (1.2 GB)", group: "Lightweight" },
+  { id: "Qwen2.5-3B-Instruct-q4f16_1-MLC", label: "Qwen 2.5 3B (2.2 GB)", group: "Lightweight" },
+  { id: "SmolLM2-1.7B-Instruct-q4f16_1-MLC", label: "SmolLM2 1.7B (1.2 GB)", group: "Lightweight" },
+  { id: "SmolLM2-360M-Instruct-q4f16_1-MLC", label: "SmolLM2 360M (300 MB)", group: "Lightweight" },
+  { id: "gemma-2-2b-it-q4f16_1-MLC", label: "Gemma 2 2B (1.7 GB)", group: "Alternative" },
+  { id: "TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC", label: "TinyLlama 1.1B (831 MB)", group: "Alternative" },
+  { id: "Hermes-3-Llama-3.2-3B-q4f16_1-MLC", label: "Hermes 3 Llama 3.2 3B (2.3 GB)", group: "Alternative" },
+];
+
 function App() {
-  const whisper = useWhisperModel();
-  const llm = useWebLLM();
+  // Load saved model preferences from localStorage
+  const savedWhisperModel = localStorage.getItem(STORAGE_KEYS.WHISPER_MODEL) || undefined;
+  const savedLlmModel = localStorage.getItem(STORAGE_KEYS.WEBLLM_MODEL) || undefined;
+  const savedVoiceId = localStorage.getItem(STORAGE_KEYS.PIPER_VOICE);
+
+  const whisper = useWhisperModel(savedWhisperModel);
+  const llm = useWebLLM(savedLlmModel);
   const piper = usePiperModel();
 
   const {
     status: whisperStatus,
     isTranscribing,
     transcribe,
+    startStream,
+    pushStreamChunk,
+    finishStream,
     model: whisperModel,
     setModel: setWhisperModel,
     partialText,
     finalText,
-    chunks,
     error: whisperError,
-    setManualTranscript,
   } = whisper;
-  const { status: llmStatus, generate, isResponding } = llm;
+  const {
+    status: llmStatus,
+    generate,
+    isResponding,
+    partialResponse,
+    model: llmModel,
+    setModel: setLlmModel,
+  } = llm;
   const {
     status: piperStatus,
     speak,
@@ -64,6 +99,7 @@ function App() {
     isActive: false,
   });
   const [ingressMode, setIngressMode] = useState<"llm" | "tts">("llm");
+  const [streamingAssistantTurn, setStreamingAssistantTurn] = useState<ConversationTurn | null>(null);
   const whisperPrimedRef = useRef(false);
   const whisperPrimingRef = useRef(false);
 
@@ -72,21 +108,35 @@ function App() {
   }, [llmStatus, piperStatus, whisperStatus]);
 
   const ready = statuses.every((status) => status.state === "ready");
-  const whisperChoice =
-    WHISPER_OPTIONS.find((option) => option.id === whisperModel) ??
-    { id: whisperModel, label: whisperModel };
   const displayedVoices = voices.slice(0, 60);
   const selectedVoiceLabel =
     voices.find((voice) => voice.id === voiceId)?.name ?? `Voice ${voiceId + 1}`;
-  const loopBusy =
-    isProcessing ||
-    isTranscribing ||
-    isResponding ||
-    isSpeaking;
-
   useEffect(() => {
     turnsRef.current = turns;
   }, [turns]);
+
+  // Save model preferences to localStorage when they change
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.WHISPER_MODEL, whisperModel);
+  }, [whisperModel]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.WEBLLM_MODEL, llmModel);
+  }, [llmModel]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.PIPER_VOICE, String(voiceId));
+  }, [voiceId]);
+
+  // Restore saved voice ID when voices are loaded
+  useEffect(() => {
+    if (savedVoiceId && voices.length > 0 && voiceId === 0) {
+      const savedId = parseInt(savedVoiceId, 10);
+      if (!isNaN(savedId) && voices.some(v => v.id === savedId)) {
+        setVoiceId(savedId);
+      }
+    }
+  }, [voices, savedVoiceId, voiceId, setVoiceId]);
 
   const updateSpeechUrl = useCallback((url: string | null) => {
     setSpokenUrl((previous) => {
@@ -97,6 +147,14 @@ function App() {
     });
   }, []);
 
+  const resetConversation = useCallback(() => {
+    setTurns([]);
+    turnsRef.current = [];
+    setStreamingAssistantTurn(null);
+    setAlert(null);
+    updateSpeechUrl(null);
+  }, [updateSpeechUrl]);
+
   useEffect(() => {
     return () => {
       if (spokenUrl) {
@@ -105,13 +163,40 @@ function App() {
     };
   }, [spokenUrl]);
 
+  const estimateTokens = useCallback((text: string): number => {
+    return Math.ceil(text.length / 4);
+  }, []);
+
+  const pruneConversationForContext = useCallback(
+    (history: ConversationTurn[], maxContextTokens = 1536): ConversationTurn[] => {
+      const systemPromptTokens = estimateTokens(SYSTEM_PROMPT);
+      let availableTokens = maxContextTokens - systemPromptTokens - 1024;
+
+      const pruned: ConversationTurn[] = [];
+      for (let i = history.length - 1; i >= 0; i--) {
+        const turn = history[i];
+        const turnTokens = estimateTokens(turn.content);
+        if (availableTokens - turnTokens < 0 && pruned.length >= 2) {
+          break;
+        }
+        availableTokens -= turnTokens;
+        pruned.unshift(turn);
+      }
+      return pruned;
+    },
+    [estimateTokens],
+  );
+
   const processMessage = useCallback(
     async (userMessage: string) => {
       const trimmed = userMessage.trim();
-      const fallback = trimmed.length > 0 ? trimmed : "(no intelligible speech captured)";
+      if (!trimmed) {
+        setAlert("I didn't hear anything. Try again.");
+        return;
+      }
       const userTurn: ConversationTurn = {
         role: "user",
-        content: fallback,
+        content: trimmed,
         timestamp: Date.now(),
       };
 
@@ -119,16 +204,25 @@ function App() {
       setTurns(historyWithUser);
       turnsRef.current = historyWithUser;
 
+      const prunedHistory = pruneConversationForContext(historyWithUser);
       const llmMessages: ChatCompletionMessageParam[] = [
         { role: "system", content: SYSTEM_PROMPT },
-        ...historyWithUser.map((turn) => ({
+        ...prunedHistory.map((turn) => ({
           role: turn.role,
           content: turn.content,
         })),
       ];
 
+      const streamingTurn: ConversationTurn = {
+        role: "assistant",
+        content: "",
+        timestamp: Date.now() + 1,
+      };
+      setStreamingAssistantTurn(streamingTurn);
+
       const reply = await generate(llmMessages);
       if (!reply) {
+        setStreamingAssistantTurn(null);
         throw new Error("The language model did not return a response.");
       }
 
@@ -138,6 +232,7 @@ function App() {
         timestamp: Date.now() + 1,
       };
 
+      setStreamingAssistantTurn(null);
       const historyWithAssistant = [...historyWithUser, assistantTurn];
       setTurns(historyWithAssistant);
       turnsRef.current = historyWithAssistant;
@@ -145,7 +240,7 @@ function App() {
       const speechUrl = await speak(reply);
       updateSpeechUrl(speechUrl);
     },
-    [generate, speak, updateSpeechUrl],
+    [generate, speak, updateSpeechUrl, pruneConversationForContext],
   );
 
   const runManualLoop = useCallback(
@@ -154,7 +249,6 @@ function App() {
       if (!content) {
         return;
       }
-      setManualTranscript(content);
       setAlert(null);
       setIsProcessing(true);
       try {
@@ -176,38 +270,56 @@ function App() {
         setIsProcessing(false);
       }
     },
-    [ingressMode, processMessage, setManualTranscript, speak, updateSpeechUrl],
+    [ingressMode, processMessage, speak, updateSpeechUrl],
   );
 
-  const runLoop = useCallback(
-    async (audioBuffer: AudioBuffer) => {
-      setAlert(null);
-      setIsProcessing(true);
+  const handleAudioChunk = useCallback((chunk: Float32Array) => {
+    pushStreamChunk(chunk);
+  }, [pushStreamChunk]);
 
-      try {
-        const transcript = await transcribe(audioBuffer);
-        let userMessage = transcript.text?.trim();
-        const silentFallback = "(no intelligible speech captured)";
-
-        if (!userMessage || userMessage.length === 0) {
-          userMessage = silentFallback;
-        }
-        await processMessage(userMessage);
-      } catch (error) {
-        setAlert(
-          (error as Error).message ?? "Something went wrong in the pipeline.",
-        );
-      } finally {
-        setIsProcessing(false);
+  const handleRecordingComplete = useCallback(async (_blob: Blob) => {
+    setAlert(null);
+    setIsProcessing(true);
+    try {
+      const result = await finishStream();
+      if (result && result.text.trim()) {
+        await processMessage(result.text.trim());
+      } else {
+        setAlert("I didn't hear anything. Try again.");
       }
-    },
-    [processMessage, transcribe],
-  );
+    } catch (error) {
+      setAlert((error as Error).message ?? "Unable to transcribe audio.");
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [finishStream, processMessage]);
 
   const recorder = useAudioRecorder({
-    onComplete: runLoop,
+    onRecordingComplete: handleRecordingComplete,
     onLevels: setLevelSnapshot,
+    onAudioChunk: handleAudioChunk,
+    enableVAD: true,
+    silenceDurationMs: 1200,
   });
+  const loopBusy =
+    isProcessing ||
+    isTranscribing ||
+    isResponding ||
+    isSpeaking ||
+    recorder.isRecording;
+
+  const handleStartRecording = useCallback(async () => {
+    try {
+      await startStream();
+      await recorder.start();
+    } catch (error) {
+      setAlert((error as Error).message ?? "Unable to access microphone.");
+    }
+  }, [recorder, startStream]);
+
+  const handleStopRecording = useCallback(() => {
+    recorder.stop();
+  }, [recorder]);
 
   useEffect(() => {
     if (
@@ -235,52 +347,129 @@ function App() {
     <div className="app">
       <header className="app__header">
         <div>
-          <p className="eyebrow">Progressive Web Demo</p>
-          <h1>Browser-native speech, reasoning, and speech.</h1>
-          <p className="lede">
-            Whisper ingests your microphone, WebLLM reasons locally, and Piper
-            answers back without leaving this tab.
-          </p>
+          <p className="eyebrow">Local Voice Assistant</p>
+          <h1>Voice, Intelligence, Speech</h1>
         </div>
-        <div className="badge">{ready ? "All engines ready" : "Preparing..."}</div>
+        <div className="badge">{ready ? "Ready" : "Loading..."}</div>
       </header>
 
       <section className="status-grid">
         {statuses.map((status) => (
-          <ModelStatusCard key={status.model} status={status} />
+          <ModelStatusCard key={status.model} status={status}>
+            {status.model === "whisper" && (
+              <div className="model-control">
+                <label htmlFor="whisper-model">Model</label>
+                <select
+                  id="whisper-model"
+                  value={whisperModel}
+                  onChange={(event) => setWhisperModel(event.target.value)}
+                  disabled={recorder.isRecording || loopBusy}
+                >
+                  {WHISPER_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                  {!WHISPER_OPTIONS.some((option) => option.id === whisperModel) && (
+                    <option value={whisperModel}>{whisperModel}</option>
+                  )}
+                </select>
+              </div>
+            )}
+            {status.model === "webllm" && (
+              <div className="model-control">
+                <label htmlFor="webllm-model">Model</label>
+                <select
+                  id="webllm-model"
+                  value={llmModel}
+                  onChange={(event) => setLlmModel(event.target.value)}
+                  disabled={recorder.isRecording || loopBusy}
+                >
+                  {WEBLLM_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                  {!WEBLLM_OPTIONS.some((option) => option.id === llmModel) && (
+                    <option value={llmModel}>{llmModel}</option>
+                  )}
+                </select>
+              </div>
+            )}
+            {status.model === "piper" && (
+              <div className="model-control">
+                <label htmlFor="piper-voice">Voice</label>
+                <select
+                  id="piper-voice"
+                  value={String(voiceId)}
+                  onChange={(event) => setVoiceId(Number(event.target.value))}
+                  disabled={!ready || recorder.isRecording || loopBusy}
+                >
+                  {displayedVoices.length > 0 ? (
+                    displayedVoices.map((voice) => (
+                      <option key={voice.id} value={voice.id}>
+                        {voice.name}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="0" disabled>
+                      Loading voices…
+                    </option>
+                  )}
+                  {displayedVoices.every((voice) => voice.id !== voiceId) && (
+                    <option value={voiceId}>{selectedVoiceLabel}</option>
+                  )}
+                </select>
+              </div>
+            )}
+          </ModelStatusCard>
         ))}
       </section>
 
-      <section className="ingress-panel">
-        <div>
-          <h2>Verbal ingress</h2>
-          <p>
-            Tap record, speak freely, then watch the ASR → LLM → TTS chain fire.
-            For best results, keep utterances under 10 seconds.
-          </p>
-        </div>
-        <RecorderButton
-          isRecording={recorder.isRecording}
-          disabled={!ready || loopBusy}
-          onStart={recorder.start}
-          onStop={() => recorder.stop("manual")}
-        />
-      </section>
+      <div className="ingress-row">
+        <section className="ingress-panel">
+          <div className="ingress-panel__copy">
+            <h2>Voice Input</h2>
+            <p>
+              Tap to record. VAD will auto-detect when you finish speaking.
+            </p>
+          </div>
+          <div className="ingress-panel__controls">
+            <RecorderButton
+              isRecording={recorder.isRecording}
+              disabled={!ready || loopBusy}
+              onStart={() => {
+                void handleStartRecording();
+              }}
+              onStop={() => {
+                void handleStopRecording();
+              }}
+            />
+            <AudioVisualizer
+              rms={levelSnapshot.rms}
+              eqLevels={levelSnapshot.eq}
+              isActive={levelSnapshot.isActive}
+            />
+            <div className="ingress-panel__transcript">
+              <div>
+                <p className="ingress-panel__label">Partial</p>
+                <p className="ingress-panel__text">{partialText || "\u00A0"}</p>
+              </div>
+              <div>
+                <p className="ingress-panel__label">Final</p>
+                <p className="ingress-panel__text">{finalText || "\u00A0"}</p>
+              </div>
+              {whisperError && <p className="transcript-error">{whisperError}</p>}
+            </div>
+          </div>
+        </section>
 
-      <section className="textual-ingress">
+        <section className="textual-ingress">
         <div>
-          <h2>Textual ingress</h2>
+          <h2>Text Input</h2>
           <p>
-            Prefer typing? Send crafted prompts directly into the same Whisper → LLM → Piper pipeline or flip the
-            toggle to speak the text immediately with Piper.
+            Type your message or text to speak directly.
           </p>
-        </div>
-        <div className="textual-ingress__visual">
-          <AudioVisualizer
-            rms={levelSnapshot.rms}
-            eqLevels={levelSnapshot.eq}
-            isActive={levelSnapshot.isActive}
-          />
         </div>
         <form
           className="textual-ingress__form"
@@ -314,74 +503,7 @@ function App() {
             </button>
           </div>
         </form>
-      </section>
-      <section className="transcript-panel">
-        <div className="transcript-panel__row">
-          <h3>Partial transcript</h3>
-          <p>{partialText || (isTranscribing ? "Listening…" : "—")}</p>
-        </div>
-        <div className="transcript-panel__row">
-          <h3>Final transcript</h3>
-          <p>{finalText || "—"}</p>
-          <span className="transcript-panel__meta">
-            {chunks.length > 0 ? `${chunks.length} segment${chunks.length === 1 ? "" : "s"}` : "No segments yet"}
-          </span>
-        </div>
-        {whisperError && <p className="transcript-error">{whisperError}</p>}
-      </section>
-
-      <AudioVisualizer
-        rms={levelSnapshot.rms}
-        eqLevels={levelSnapshot.eq}
-        isActive={levelSnapshot.isActive}
-      />
-
-      <div className="model-controls">
-        <div className="model-control">
-          <label htmlFor="whisper-model">Whisper model</label>
-          <select
-            id="whisper-model"
-            value={whisperModel}
-            onChange={(event) => setWhisperModel(event.target.value)}
-            disabled={recorder.isRecording || loopBusy}
-          >
-            {WHISPER_OPTIONS.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-              </option>
-            ))}
-            {!WHISPER_OPTIONS.some((option) => option.id === whisperModel) && (
-              <option value={whisperModel}>{whisperModel}</option>
-            )}
-          </select>
-          <p className="model-hint">{whisperChoice.label}</p>
-        </div>
-
-        <div className="model-control">
-          <label htmlFor="piper-voice">Piper voice</label>
-          <select
-            id="piper-voice"
-            value={String(voiceId)}
-            onChange={(event) => setVoiceId(Number(event.target.value))}
-            disabled={!ready || recorder.isRecording || loopBusy}
-          >
-            {displayedVoices.length > 0 ? (
-              displayedVoices.map((voice) => (
-                <option key={voice.id} value={voice.id}>
-                  {voice.name}
-                </option>
-              ))
-            ) : (
-              <option value="0" disabled>
-                Loading voices…
-              </option>
-            )}
-            {displayedVoices.every((voice) => voice.id !== voiceId) && (
-              <option value={voiceId}>{selectedVoiceLabel}</option>
-            )}
-          </select>
-          <p className="model-hint">{selectedVoiceLabel}</p>
-        </div>
+        </section>
       </div>
 
       {alert && <div className="alert">{alert}</div>}
@@ -390,11 +512,28 @@ function App() {
       )}
       {loopBusy && (
         <div className="status-pill">
-          Listening, transcribing, reasoning, or speaking…
+          Processing...
         </div>
       )}
 
-      <ConversationLog turns={turns} />
+      {turns.length > 0 && (
+        <div className="conversation-controls">
+          <button
+            onClick={resetConversation}
+            disabled={loopBusy}
+            className="reset-button"
+          >
+            Clear Conversation
+          </button>
+        </div>
+      )}
+
+      <ConversationLog
+        turns={streamingAssistantTurn && partialResponse
+          ? [...turns, { ...streamingAssistantTurn, content: partialResponse }]
+          : turns
+        }
+      />
 
       {spokenUrl && (
         <div className="player">
@@ -405,8 +544,7 @@ function App() {
 
       <footer className="app__footer">
         <p>
-          Models: Whisper (Transformers.js), WebLLM ({llmStatus.message}), and
-          Piper TTS (onnxruntime-web). All computation stays client-side.
+          Whisper ASR • WebLLM • Piper TTS — All processing runs locally in your browser
         </p>
       </footer>
     </div>

@@ -1,13 +1,4 @@
 import { useCallback, useRef, useState } from "react";
-import { TARGET_SAMPLE_RATE } from "../utils/audio";
-
-const DEFAULT_EQ_BANDS = 6;
-const DEFAULT_SILENCE_MS = 1300;
-const DEFAULT_MIN_RECORDING_MS = 600;
-const DEFAULT_MAX_RECORDING_MS = 15000;
-
-type FloatAnalyserArray = Float32Array<ArrayBuffer>;
-type ByteAnalyserArray = Uint8Array<ArrayBuffer>;
 
 export interface LevelSnapshot {
   rms: number;
@@ -16,45 +7,68 @@ export interface LevelSnapshot {
 }
 
 interface UseAudioRecorderOptions {
-  onComplete: (buffer: AudioBuffer) => Promise<void> | void;
+  onRecordingComplete: (blob: Blob) => void;
   onLevels?: (snapshot: LevelSnapshot) => void;
+  onAudioChunk?: (chunk: Float32Array) => void;
   eqBands?: number;
-  silenceDurationMs?: number;
+  enableVAD?: boolean;
   minRecordingMs?: number;
   maxRecordingMs?: number;
+  silenceDurationMs?: number;
+}
+
+const DEFAULT_EQ_BANDS = 6;
+const DEFAULT_MIN_RECORDING_MS = 450;
+const DEFAULT_MAX_RECORDING_MS = 15000;
+const DEFAULT_SILENCE_DURATION_MS = 1200;
+const MIN_FREQUENCY = 120;
+const MAX_FREQUENCY = 5200;
+const EQ_DECAY = 0.6;
+const EQ_THRESHOLD = 0.08;
+
+const SUPPORTED_MIME_TYPES = ['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/wav', 'audio/aac'];
+
+function getSupportedMimeType(): string | undefined {
+  for (const type of SUPPORTED_MIME_TYPES) {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) {
+      return type;
+    }
+  }
+  return undefined;
 }
 
 export function useAudioRecorder({
-  onComplete,
+  onRecordingComplete,
   onLevels,
+  onAudioChunk,
   eqBands = DEFAULT_EQ_BANDS,
-  silenceDurationMs = DEFAULT_SILENCE_MS,
+  enableVAD = true,
   minRecordingMs = DEFAULT_MIN_RECORDING_MS,
   maxRecordingMs = DEFAULT_MAX_RECORDING_MS,
+  silenceDurationMs = DEFAULT_SILENCE_DURATION_MS,
 }: UseAudioRecorderOptions) {
   const [isRecording, setIsRecording] = useState(false);
   const [recorderError, setRecorderError] = useState<string | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+
   const streamRef = useRef<MediaStream | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const analyserDataRef = useRef<FloatAnalyserArray | null>(null);
-  const frequencyDataRef = useRef<ByteAnalyserArray | null>(null);
+  const analyserSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
   const monitorRafRef = useRef<number | null>(null);
-  const noiseFloorRef = useRef(0.001);
-  const recordingStartedAtRef = useRef<number | null>(null);
-  const accumulatedSilenceRef = useRef(0);
+  const audioChunksRef = useRef<Float32Array[]>([]);
+
+  const noiseFloorRef = useRef(0.0008);
+  const recordingStartedAtRef = useRef<number>(0);
+  const lastSpeechTimeRef = useRef<number>(0);
   const speechActiveRef = useRef(false);
   const silenceTriggeredRef = useRef(false);
-  const stopReasonRef = useRef<"manual" | "silence" | "external">("manual");
-
-  const eqStateRef = useRef<number[]>(Array(eqBands).fill(4));
-
-  const resetLevels = useCallback(() => {
-    eqStateRef.current = Array(eqBands).fill(4);
-    onLevels?.({ rms: 0, eq: eqStateRef.current, isActive: false });
-  }, [eqBands, onLevels]);
+  const accumulatedSilenceRef = useRef(0);
+  const eqUpdateTimeRef = useRef(0);
+  const eqLevelsRef = useRef<number[]>(Array(eqBands).fill(6));
 
   const stopMonitor = useCallback(() => {
     if (monitorRafRef.current !== null) {
@@ -63,228 +77,291 @@ export function useAudioRecorder({
     }
   }, []);
 
-  const cleanup = useCallback(async () => {
+  const releaseAudioResources = useCallback(() => {
     stopMonitor();
+    if (processorRef.current) {
+      processorRef.current.disconnect();
+      processorRef.current = null;
+    }
+    analyserSourceRef.current?.disconnect();
+    analyserSourceRef.current = null;
+    analyserRef.current = null;
     if (audioContextRef.current) {
-      await audioContextRef.current.close().catch(() => undefined);
+      audioContextRef.current.close().catch(() => undefined);
       audioContextRef.current = null;
     }
-    analyserRef.current = null;
-    analyserDataRef.current = null;
-    frequencyDataRef.current = null;
-    mediaRecorderRef.current = null;
-    chunksRef.current = [];
+  }, [stopMonitor]);
+
+  const cleanup = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
-    resetLevels();
-    recordingStartedAtRef.current = null;
-    accumulatedSilenceRef.current = 0;
+    releaseAudioResources();
+    recorderRef.current = null;
+    chunksRef.current = [];
+    audioChunksRef.current = [];
     speechActiveRef.current = false;
     silenceTriggeredRef.current = false;
-    stopReasonRef.current = "manual";
-  }, [resetLevels, stopMonitor]);
+    noiseFloorRef.current = 0.0008;
+  }, [releaseAudioResources]);
 
-  const updateLevels = useCallback(() => {
-    const analyser = analyserRef.current;
-    if (!analyser) return null;
-
-    if (!analyserDataRef.current || analyserDataRef.current.length !== analyser.fftSize) {
-      analyserDataRef.current = new Float32Array(analyser.fftSize) as FloatAnalyserArray;
-    }
-    if (!frequencyDataRef.current || frequencyDataRef.current.length !== analyser.frequencyBinCount) {
-      frequencyDataRef.current = new Uint8Array(analyser.frequencyBinCount) as ByteAnalyserArray;
-    }
-
-    const timeBuffer = analyserDataRef.current as Float32Array<ArrayBuffer>;
-    const freqBuffer = frequencyDataRef.current as Uint8Array<ArrayBuffer>;
-    analyser.getFloatTimeDomainData(timeBuffer);
-    analyser.getByteFrequencyData(freqBuffer);
-
-    let sumSquares = 0;
-    for (let i = 0; i < timeBuffer.length; i += 1) {
-      const sample = timeBuffer[i];
-      sumSquares += sample * sample;
-    }
-    const rms = Math.sqrt(sumSquares / timeBuffer.length);
-
-    // Update adaptive noise floor
-    const smoothing = rms > noiseFloorRef.current ? 0.05 : 0.005;
-    noiseFloorRef.current =
-      noiseFloorRef.current * (1 - smoothing) + rms * smoothing || noiseFloorRef.current;
-
-    const dynamicThreshold = Math.max(noiseFloorRef.current * 1.8, 0.0008);
-    const silenceThreshold = Math.max(dynamicThreshold * 0.6, noiseFloorRef.current * 1.2);
-    const frameDurationMs = (analyser.fftSize / analyser.context.sampleRate) * 1000;
-    const recorderActive = mediaRecorderRef.current?.state === "recording";
-    const isActive = recorderActive && (speechActiveRef.current || rms > dynamicThreshold);
-
-    const nyquist = analyser.context.sampleRate / 2;
-    const binCount = analyser.frequencyBinCount;
-    const nextLevels: number[] = [];
-    for (let band = 0; band < eqBands; band += 1) {
-      const startHz = (band / eqBands) * nyquist;
-      const endHz = ((band + 1) / eqBands) * nyquist;
-      const minIndex = Math.max(0, Math.floor((startHz / nyquist) * binCount));
-      const maxIndex = Math.min(binCount - 1, Math.floor((endHz / nyquist) * binCount));
-      let sum = 0;
-      let samples = 0;
-      for (let i = minIndex; i <= maxIndex; i += 1) {
-        sum += freqBuffer[i];
-        samples += 1;
+  const initializeAnalyser = useCallback(
+    async (stream: MediaStream) => {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContext();
       }
-      const average = samples > 0 ? sum / samples : 0;
-      const normalized = Math.min(1, average / 255);
-      const target = isActive ? 20 + normalized * 80 : 6 + normalized * 24;
-      const previous = eqStateRef.current[band] ?? 4;
-      const smoothed = previous * 0.65 + target * 0.35;
-      nextLevels.push(smoothed);
+
+      try {
+        await audioContextRef.current.resume();
+      } catch {
+        // ignore resume errors
+      }
+
+      analyserSourceRef.current?.disconnect();
+      if (processorRef.current) {
+        processorRef.current.disconnect();
+      }
+
+      const source = audioContextRef.current.createMediaStreamSource(stream);
+      const analyser = audioContextRef.current.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.4;
+      analyser.minDecibels = -90;
+      analyser.maxDecibels = -10;
+      source.connect(analyser);
+
+      // Set up ScriptProcessorNode for raw audio capture if callback is provided
+      if (onAudioChunk) {
+        const bufferSize = 4096;
+        const processor = audioContextRef.current.createScriptProcessor(bufferSize, 1, 1);
+
+        processor.onaudioprocess = (event) => {
+          const inputData = event.inputBuffer.getChannelData(0);
+          const sampleRate = event.inputBuffer.sampleRate;
+
+          // Resample to 16kHz if necessary
+          if (sampleRate === 16000) {
+            onAudioChunk(new Float32Array(inputData));
+          } else {
+            const targetSampleRate = 16000;
+            const ratio = sampleRate / targetSampleRate;
+            const newLength = Math.floor(inputData.length / ratio);
+            const resampled = new Float32Array(newLength);
+
+            for (let i = 0; i < newLength; i++) {
+              const srcIndex = i * ratio;
+              const srcIndexFloor = Math.floor(srcIndex);
+              const srcIndexCeil = Math.min(srcIndexFloor + 1, inputData.length - 1);
+              const fraction = srcIndex - srcIndexFloor;
+              resampled[i] = inputData[srcIndexFloor] * (1 - fraction) + inputData[srcIndexCeil] * fraction;
+            }
+
+            onAudioChunk(resampled);
+          }
+        };
+
+        source.connect(processor);
+        processor.connect(audioContextRef.current.destination);
+        processorRef.current = processor;
+      }
+
+      analyserRef.current = analyser;
+      analyserSourceRef.current = source;
+    },
+    [onAudioChunk],
+  );
+
+  const stop = useCallback(() => {
+    if (!isRecording) return;
+
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state === 'recording') {
+      recorder.stop();
     }
-    eqStateRef.current = nextLevels;
-    onLevels?.({ rms, eq: nextLevels, isActive });
 
-    return {
-      rms,
-      dynamicThreshold,
-      silenceThreshold,
-      frameDurationMs,
-      recorderActive,
-    };
-  }, [eqBands, onLevels]);
-
-  const startMonitor = useCallback(() => {
+    setIsRecording(false);
+    speechActiveRef.current = false;
+    silenceTriggeredRef.current = false;
     stopMonitor();
-    const tick = () => {
-      const metrics = updateLevels();
+  }, [isRecording, stopMonitor]);
+
+  const startMonitoringLevels = useCallback(() => {
+    if (!isRecording || !analyserRef.current) {
+      stopMonitor();
+      return;
+    }
+
+    const analyser = analyserRef.current;
+    const timeBuffer = new Float32Array(analyser.fftSize);
+    const frequencyBuffer = new Uint8Array(analyser.frequencyBinCount);
+
+    const detect = () => {
+      if (!isRecording || !analyserRef.current) {
+        monitorRafRef.current = null;
+        return;
+      }
+
+      analyser.getFloatTimeDomainData(timeBuffer);
+      analyser.getByteFrequencyData(frequencyBuffer);
+
+      let sumSquares = 0;
+      for (let i = 0; i < timeBuffer.length; i += 1) {
+        const sample = timeBuffer[i];
+        sumSquares += sample * sample;
+      }
+      const rms = Math.sqrt(sumSquares / timeBuffer.length);
       const now = performance.now();
-      const recorderActive = metrics?.recorderActive ?? false;
 
-      if (metrics && recorderActive) {
-        const { rms, dynamicThreshold, silenceThreshold, frameDurationMs } = metrics;
+      // Adaptive thresholds based on noise floor
+      const dynamicThreshold = Math.max(noiseFloorRef.current * 1.8, 0.0008);
+      const silenceThreshold = Math.max(dynamicThreshold * 0.6, noiseFloorRef.current * 1.2);
+      const frameDurationMs = (analyser.fftSize / analyser.context.sampleRate) * 1000;
+      const isCurrentlyActive = speechActiveRef.current || rms > dynamicThreshold;
 
+      // Update EQ visualization
+      if (now - eqUpdateTimeRef.current > 90) {
+        eqUpdateTimeRef.current = now;
+        const nyquist = analyser.context.sampleRate / 2;
+        const binCount = analyser.frequencyBinCount;
+        let peakNormalized = 0;
+        const previousLevels = eqLevelsRef.current;
+        const nextLevels = Array.from({ length: eqBands }, (_, index) => {
+          const bandStartHz = MIN_FREQUENCY + ((MAX_FREQUENCY - MIN_FREQUENCY) / eqBands) * index;
+          const bandEndHz = MIN_FREQUENCY + ((MAX_FREQUENCY - MIN_FREQUENCY) / eqBands) * (index + 1);
+          const minIndex = Math.max(0, Math.floor((bandStartHz / nyquist) * binCount));
+          const maxIndex = Math.min(binCount - 1, Math.floor((bandEndHz / nyquist) * binCount));
+          let sum = 0;
+          let samples = 0;
+          for (let i = minIndex; i <= maxIndex; i += 1) {
+            const magnitude = frequencyBuffer[i];
+            if (Number.isFinite(magnitude)) {
+              sum += magnitude;
+              samples += 1;
+            }
+          }
+          const avgMagnitude = samples > 0 ? sum / samples : 0;
+          const normalized = Math.min(1, avgMagnitude / 255);
+          peakNormalized = Math.max(peakNormalized, normalized);
+          const targetHeight = isCurrentlyActive ? 18 + normalized * 90 : 6 + normalized * 28;
+          const previousHeight = previousLevels[index] ?? 6;
+          const smoothed = previousHeight * EQ_DECAY + targetHeight * (1 - EQ_DECAY);
+          return Math.max(6, smoothed);
+        });
+
+        eqLevelsRef.current = nextLevels;
+        onLevels?.({
+          rms,
+          eq: nextLevels,
+          isActive: peakNormalized > EQ_THRESHOLD,
+        });
+      }
+
+      // VAD logic
+      if (enableVAD) {
         if (rms > dynamicThreshold) {
           speechActiveRef.current = true;
+          lastSpeechTimeRef.current = now;
           accumulatedSilenceRef.current = 0;
           noiseFloorRef.current = Math.min(noiseFloorRef.current * 0.9 + rms * 0.1, 0.02);
           silenceTriggeredRef.current = false;
         } else {
           if (!speechActiveRef.current) {
             noiseFloorRef.current = noiseFloorRef.current * 0.92 + rms * 0.08;
-          } else {
+          }
+          if (speechActiveRef.current) {
             accumulatedSilenceRef.current += frameDurationMs;
-            const startedAt = recordingStartedAtRef.current ?? now;
-            const elapsed = now - startedAt;
+            const recordingElapsed = now - recordingStartedAtRef.current;
             if (
               !silenceTriggeredRef.current &&
               accumulatedSilenceRef.current >= silenceDurationMs &&
               rms < silenceThreshold &&
-              elapsed > minRecordingMs
+              recordingElapsed > minRecordingMs
             ) {
               silenceTriggeredRef.current = true;
               speechActiveRef.current = false;
               accumulatedSilenceRef.current = 0;
-              stopReasonRef.current = "silence";
-              mediaRecorderRef.current?.stop();
-              monitorRafRef.current = null;
-              return;
+              stop();
             }
           }
         }
 
-        const startedAt = recordingStartedAtRef.current ?? now;
-        if (now - startedAt > maxRecordingMs) {
-          silenceTriggeredRef.current = true;
-          speechActiveRef.current = false;
-          stopReasonRef.current = "silence";
-          mediaRecorderRef.current?.stop();
-          monitorRafRef.current = null;
-          return;
+        // Max duration check
+        if (now - recordingStartedAtRef.current > maxRecordingMs) {
+          stop();
         }
       }
 
-      monitorRafRef.current = requestAnimationFrame(tick);
+      monitorRafRef.current = requestAnimationFrame(detect);
     };
-    monitorRafRef.current = requestAnimationFrame(tick);
-  }, [maxRecordingMs, minRecordingMs, silenceDurationMs, stopMonitor, updateLevels]);
+
+    stopMonitor();
+    monitorRafRef.current = requestAnimationFrame(detect);
+  }, [eqBands, enableVAD, isRecording, maxRecordingMs, minRecordingMs, onLevels, silenceDurationMs, stop, stopMonitor]);
 
   const start = useCallback(async () => {
     if (isRecording) return;
     setRecorderError(null);
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      const recorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = recorder;
-      chunksRef.current = [];
+      const mimeType = getSupportedMimeType();
+      if (!mimeType) {
+        throw new Error('This browser does not support any required audio codecs.');
+      }
 
-      const audioContext = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
-      const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 2048;
-      analyser.smoothingTimeConstant = 0.2;
-      const source = audioContext.createMediaStreamSource(stream);
-      source.connect(analyser);
-      analyserRef.current = analyser;
-      audioContextRef.current = audioContext;
-      recordingStartedAtRef.current = performance.now();
-      accumulatedSilenceRef.current = 0;
-      speechActiveRef.current = false;
-      silenceTriggeredRef.current = false;
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+        throw new Error('This browser does not support audio recording.');
+      }
 
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
+      if (!streamRef.current) {
+        try {
+          streamRef.current = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true }
+          });
+        } catch (error) {
+          if ((error as DOMException).name === 'NotAllowedError') {
+            throw new Error('Microphone access denied. Please enable and try again.');
+          }
+          throw new Error('Unable to access microphone. Check device settings.');
+        }
+      }
+
+      await initializeAnalyser(streamRef.current);
+
+      const recorder = new MediaRecorder(streamRef.current, { mimeType });
+
+      recorder.addEventListener('dataavailable', (event) => {
+        if (event.data && event.data.size > 0) {
           chunksRef.current.push(event.data);
         }
-      };
+      });
 
-      recorder.onstop = async () => {
-        stopMonitor();
-        const reason = stopReasonRef.current;
-        try {
-          if (reason === "silence") {
-            if (!chunksRef.current.length) {
-              throw new Error("No audio captured.");
-            }
-            const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-            const arrayBuffer = await blob.arrayBuffer();
-            const decodeContext = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
-            const audioBuffer = await decodeContext.decodeAudioData(arrayBuffer.slice(0));
-            await onComplete(audioBuffer);
-            await decodeContext.close();
-          }
-        } catch (error) {
-          if (reason === "silence") {
-            setRecorderError(
-              (error as Error).message ?? "Could not decode audio data",
-            );
-          }
-        } finally {
-          stopReasonRef.current = "manual";
-          setIsRecording(false);
-          await cleanup();
+      recorder.addEventListener('stop', () => {
+        if (chunksRef.current.length > 0) {
+          const blob = new Blob(chunksRef.current, { type: mimeType });
+          chunksRef.current = [];
+          onRecordingComplete(blob);
         }
-      };
+      });
+
+      recorderRef.current = recorder;
+      chunksRef.current = [];
+      noiseFloorRef.current = Math.max(noiseFloorRef.current, 0.0008);
+      recordingStartedAtRef.current = performance.now();
+      lastSpeechTimeRef.current = recordingStartedAtRef.current;
+      speechActiveRef.current = false;
+      silenceTriggeredRef.current = false;
+      accumulatedSilenceRef.current = 0;
 
       recorder.start();
       setIsRecording(true);
-      startMonitor();
+      startMonitoringLevels();
     } catch (error) {
-      setRecorderError(
-        (error as Error).message ?? "Microphone permissions denied",
-      );
-      await cleanup();
+      console.error('Microphone error:', error);
+      setRecorderError(error instanceof Error ? error.message : 'Unable to start recording.');
+      cleanup();
     }
-  }, [cleanup, isRecording, onComplete, startMonitor, stopMonitor]);
-
-  const stop = useCallback(
-    (reason: "manual" | "silence" | "external" = "manual") => {
-      if (mediaRecorderRef.current && isRecording) {
-        stopReasonRef.current = reason;
-        mediaRecorderRef.current.stop();
-      }
-    },
-    [isRecording],
-  );
+  }, [cleanup, initializeAnalyser, isRecording, onRecordingComplete, startMonitoringLevels]);
 
   return {
     isRecording,

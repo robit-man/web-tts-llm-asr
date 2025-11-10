@@ -10,9 +10,10 @@ const iconMap = {
 
 type Props = {
   status: ModelStatus;
+  children?: React.ReactNode;
 };
 
-export function ModelStatusCard({ status }: Props) {
+export function ModelStatusCard({ status, children }: Props) {
   const Icon = iconMap[status.model];
   const stateLabel = {
     ready: "Ready",
@@ -48,6 +49,7 @@ export function ModelStatusCard({ status }: Props) {
           />
         </div>
       )}
+      {children}
     </div>
   );
 }

@@ -68,14 +68,19 @@ body {
   gap: 1rem;
 }
 
+.ingress-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
 .ingress-panel {
   border-radius: 1.25rem;
   padding: 1.2rem 1.5rem;
   background: rgba(15, 23, 42, 0.8);
   border: 1px solid rgba(148, 163, 184, 0.2);
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
   gap: 1rem;
 }
 
@@ -83,19 +88,50 @@ body {
   margin: 0 0 0.3rem;
 }
 
-.ingress-panel p {
+.ingress-panel__copy {
+  /* Copy section at top */
+}
+
+.ingress-panel__controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.ingress-panel__transcript {
+  border-radius: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  padding: 0.9rem 1rem;
+  background: rgba(2, 6, 23, 0.65);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.ingress-panel__label {
   margin: 0;
-  color: rgba(226, 232, 240, 0.75);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.ingress-panel__text {
+  margin: 0.2rem 0 0;
+  min-height: 1.2rem;
+  color: rgba(248, 250, 252, 0.95);
+  font-size: 1rem;
+  white-space: pre-wrap;
 }
 
 .recorder-button {
-  border: none;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #38bdf8, #818cf8);
-  color: #0f172a;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 0.9rem;
+  background: linear-gradient(90deg, #0ea5e9, #6366f1);
+  color: #f8fafc;
   font-weight: 600;
-  padding: 0.85rem 1.4rem;
-  min-width: 180px;
+  padding: 0.75rem 1.2rem;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -135,6 +171,35 @@ body {
   color: rgba(226, 232, 240, 0.7);
   font-size: 0.9rem;
   width: fit-content;
+}
+
+.conversation-controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.reset-button {
+  border: none;
+  border-radius: 999px;
+  background: rgba(248, 113, 113, 0.2);
+  color: #fca5a5;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  font-weight: 600;
+  padding: 0.5rem 1.2rem;
+  cursor: pointer;
+  transition: background 120ms ease, opacity 120ms ease;
+  font-size: 0.9rem;
+}
+
+.reset-button:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.3);
+}
+
+.reset-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .conversation-log {
@@ -364,9 +429,8 @@ body {
     flex-direction: column;
   }
 
-  .ingress-panel {
-    flex-direction: column;
-    align-items: flex-start;
+  .ingress-row {
+    grid-template-columns: 1fr;
   }
 
   .recorder-button {

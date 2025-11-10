@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { audioBufferToFloat32 } from "../utils/audio";
 import type { ModelStatus } from "../types/models";
 
+type TranscriptChunk = { text: string; timestamp: [number, number | null] };
+
 type WhisperWorkerMessage =
   | {
       type: "status";
@@ -14,18 +16,21 @@ type WhisperWorkerMessage =
   | {
       type: "update";
       id: number;
+      stream?: boolean;
       text: string;
-      chunks: { text: string; timestamp: [number, number | null] }[];
+      chunks: TranscriptChunk[];
     }
   | {
       type: "transcription";
       id: number;
+      stream?: boolean;
       text: string;
-      chunks: { text: string; timestamp: [number, number | null] }[];
+      chunks: TranscriptChunk[];
     }
   | {
       type: "error";
       id?: number;
+      stream?: boolean;
       model: "whisper";
       message: string;
     };
@@ -43,9 +48,7 @@ export function useWhisperModel(initialModel = DEFAULT_MODEL) {
   const [modelId, setModelId] = useState(initialModel);
   const [partialText, setPartialText] = useState("");
   const [finalText, setFinalText] = useState("");
-  const [chunks, setChunks] = useState<
-    { text: string; timestamp: [number, number | null] }[]
-  >([]);
+  const [chunks, setChunks] = useState<TranscriptChunk[]>([]);
   const [hookError, setHookError] = useState<string | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const requestId = useRef(0);
@@ -63,6 +66,17 @@ export function useWhisperModel(initialModel = DEFAULT_MODEL) {
       }
     >
   >(new Map());
+  const streamResolvers = useRef<
+    Map<
+      number,
+      {
+        resolve: (value: { text: string; chunks: TranscriptChunk[] }) => void;
+        reject: (reason?: unknown) => void;
+      }
+    >
+  >(new Map());
+  const streamActiveRef = useRef(false);
+  const currentStreamIdRef = useRef(0);
 
   useEffect(() => {
     const worker = new Worker(
@@ -95,6 +109,18 @@ export function useWhisperModel(initialModel = DEFAULT_MODEL) {
       }
 
       if (message.type === "transcription") {
+        if (message.stream) {
+          setPartialText(message.text);
+          setFinalText(message.text);
+          setChunks(message.chunks);
+          const resolver = streamResolvers.current.get(message.id);
+          if (resolver) {
+            resolver.resolve({ text: message.text, chunks: message.chunks });
+            streamResolvers.current.delete(message.id);
+          }
+          setIsTranscribing(false);
+          return;
+        }
         const handlers = pending.current.get(message.id);
         if (handlers) {
           handlers.resolve({
@@ -128,6 +154,13 @@ export function useWhisperModel(initialModel = DEFAULT_MODEL) {
             state: "error",
             message: message.message,
           }));
+        }
+        if (message.stream) {
+          const resolver = streamResolvers.current.get(message.id ?? currentStreamIdRef.current);
+          if (resolver) {
+            resolver.reject(new Error(message.message));
+            streamResolvers.current.delete(message.id ?? currentStreamIdRef.current);
+          }
         }
         setHookError(message.message);
       }
@@ -175,6 +208,89 @@ export function useWhisperModel(initialModel = DEFAULT_MODEL) {
     );
   }, []);
 
+  const transcribeBatch = useCallback(async (blob: Blob) => {
+    if (!workerRef.current) {
+      throw new Error("Whisper worker is not ready");
+    }
+
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioContext = new AudioContext({ sampleRate: 16000 });
+    let audioBuffer: AudioBuffer;
+    try {
+      audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+    } finally {
+      await audioContext.close();
+    }
+
+    const audio = audioBufferToFloat32(audioBuffer);
+    const id = requestId.current++;
+    setIsTranscribing(true);
+    setHookError(null);
+    setPartialText("");
+    setFinalText("");
+    setChunks([]);
+
+    return await new Promise<{
+      text: string;
+      chunks: { text: string; timestamp: [number, number | null] }[];
+    }>(
+      (resolve, reject) => {
+        pending.current.set(id, { resolve, reject });
+        workerRef.current?.postMessage(
+          {
+            type: "transcribe-batch",
+            id,
+            audio,
+          },
+          [audio.buffer],
+        );
+      },
+    );
+  }, []);
+
+  const startStream = useCallback(async () => {
+    if (!workerRef.current) {
+      throw new Error("Whisper worker is not ready");
+    }
+    const streamId = currentStreamIdRef.current + 1;
+    currentStreamIdRef.current = streamId;
+    streamActiveRef.current = true;
+    setIsTranscribing(true);
+    workerRef.current.postMessage({ type: "start-stream", streamId });
+  }, []);
+
+  const pushStreamChunk = useCallback((chunk: Float32Array) => {
+    if (!workerRef.current || !streamActiveRef.current) {
+      return;
+    }
+    const streamId = currentStreamIdRef.current;
+    workerRef.current.postMessage(
+      {
+        type: "push-stream-chunk",
+        streamId,
+        audio: chunk,
+      },
+      [chunk.buffer],
+    );
+  }, []);
+
+  const finishStream = useCallback(async () => {
+    if (!workerRef.current || !streamActiveRef.current) {
+      return null;
+    }
+    const streamId = currentStreamIdRef.current;
+    const resultPromise = new Promise<{ text: string; chunks: TranscriptChunk[] }>((resolve, reject) => {
+      streamResolvers.current.set(streamId, { resolve, reject });
+    });
+    workerRef.current.postMessage({ type: "end-stream", streamId });
+    const result = await resultPromise.finally(() => {
+      streamActiveRef.current = false;
+      streamResolvers.current.delete(streamId);
+      setIsTranscribing(false);
+    });
+    return result;
+  }, []);
+
   const setModel = useCallback(
     (nextModel: string) => {
       if (!workerRef.current) return;
@@ -191,25 +307,21 @@ export function useWhisperModel(initialModel = DEFAULT_MODEL) {
     [modelId],
   );
 
-  const setManualTranscript = useCallback((text: string) => {
-    setPartialText(text);
-    setFinalText(text);
-    setChunks(text ? [{ text, timestamp: [0, null] }] : []);
-    setHookError(null);
-  }, []);
-
   return useMemo(
     () => ({
       status,
       isTranscribing,
       transcribe,
+      transcribeBatch,
       model: modelId,
       setModel,
       partialText,
       finalText,
       chunks,
       error: hookError,
-      setManualTranscript,
+      startStream,
+      pushStreamChunk,
+      finishStream,
     }),
     [
       chunks,
@@ -218,10 +330,13 @@ export function useWhisperModel(initialModel = DEFAULT_MODEL) {
       isTranscribing,
       modelId,
       partialText,
-      setManualTranscript,
+      startStream,
+      pushStreamChunk,
+      finishStream,
       setModel,
       status,
       transcribe,
+      transcribeBatch,
     ],
   );
 }
