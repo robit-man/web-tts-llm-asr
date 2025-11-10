@@ -53,17 +53,3 @@ public/
 4. **Egress** – Piper runs inside a worker with the original model-cache/on-device phonemizer pipeline. A merged waveform is returned, normalised, trimmed, and played in the UI as soon as it lands.
 5. **Model controls** – The Whisper selector swaps between Tiny/Base/Small checkpoints before recording, while the Piper selector surfaces the first 60 LibriTTS voices (all 904 are ready once the worker is up).
 5. **Offline install** – `vite-plugin-pwa` precaches the app shell and the large WASM artefacts (limit bumped to 35 MB) so the experience keeps working when re-opened.
-
-## Notes & troubleshooting
-
-- The bundled Piper WASM files (in `public/onnx-runtime`) and model weights (~24 MB) were copied directly from `/home/robit/Respositories/piper-tts-web-demo/public`.
-- Whisper Tiny EN is loaded by default for responsiveness. Update `MODEL_ID` inside `src/workers/whisper-worker.ts` if you need multilingual or larger variants.
-- WebLLM currently targets `Llama-3.2-1B-Instruct-q4f32_1-MLC` for manageable VRAM. Swap the `DEFAULT_MODEL` constant in `useWebLLM.ts` if you prefer another prebuilt model.
-- Browsers without Audio Worklets or MediaRecorder (older Safari/iOS) will blocks microphone capture. The UI surfaces these errors via the alert banner.
-- Build time warnings about large chunks are expected—the models and WASM runtimes are hefty. They are documented inside the Vite logs.
-
-## Next ideas
-
-1. Allow speaker/voice and rate selection by exposing more of the Piper worker options.
-2. Stream WebLLM tokens incrementally and feed Piper chunk-by-chunk for lower perceived latency.
-3. Persist conversation history (or transcribed clips) to IndexedDB to review previous sessions offline.
