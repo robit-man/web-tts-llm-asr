@@ -10,6 +10,7 @@ const ctx: DedicatedWorkerGlobalScope = self as DedicatedWorkerGlobalScope;
 
 let tts: PiperTTS | null = null;
 let isLoading = false;
+let voiceCache: { id: number; name: string; originalId?: string }[] = [];
 
 async function ensureModel() {
   if (tts || isLoading) {
@@ -28,11 +29,13 @@ async function ensureModel() {
     const modelPath = `${import.meta.env.BASE_URL}tts-model/en_US-libritts_r-medium.onnx`;
     const configPath = `${import.meta.env.BASE_URL}tts-model/en_US-libritts_r-medium.onnx.json`;
     tts = await PiperTTS.from_pretrained(modelPath, configPath);
+    voiceCache = tts.getSpeakers();
     ctx.postMessage({
       type: "status",
       model: "piper",
       state: "ready",
       message: "Piper voice ready",
+      voices: voiceCache,
     });
   } catch (error) {
     ctx.postMessage({
@@ -107,6 +110,16 @@ ctx.addEventListener("message", async (event: MessageEvent<PiperRequest>) => {
 
   if (data.type === "init") {
     await ensureModel();
+    if (tts && voiceCache.length === 0) {
+      voiceCache = tts.getSpeakers();
+      ctx.postMessage({
+        type: "status",
+        model: "piper",
+        state: "ready",
+        message: "Piper voice ready",
+        voices: voiceCache,
+      });
+    }
     return;
   }
 

@@ -24,7 +24,9 @@ type WhisperWorkerMessage =
       message: string;
     };
 
-export function useWhisperModel() {
+const DEFAULT_MODEL = "Xenova/whisper-tiny.en";
+
+export function useWhisperModel(initialModel = DEFAULT_MODEL) {
   const [status, setStatus] = useState<ModelStatus>({
     model: "whisper",
     label: "Whisper ASR",
@@ -32,6 +34,7 @@ export function useWhisperModel() {
     message: "Preparing worker...",
   });
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [modelId, setModelId] = useState(initialModel);
   const workerRef = useRef<Worker | null>(null);
   const requestId = useRef(0);
   const pending = useRef<
@@ -52,7 +55,7 @@ export function useWhisperModel() {
       },
     );
     workerRef.current = worker;
-    worker.postMessage({ type: "init" });
+    worker.postMessage({ type: "init", model: initialModel });
 
     const handleMessage = (event: MessageEvent<WhisperWorkerMessage>) => {
       const message = event.data;
@@ -112,7 +115,7 @@ export function useWhisperModel() {
       );
       pending.current.clear();
     };
-  }, []);
+  }, [initialModel]);
 
   const transcribe = useCallback(async (buffer: AudioBuffer) => {
     if (!workerRef.current) {
@@ -138,12 +141,30 @@ export function useWhisperModel() {
     );
   }, []);
 
+  const setModel = useCallback(
+    (nextModel: string) => {
+      if (!workerRef.current) return;
+      if (nextModel === modelId) return;
+      setModelId(nextModel);
+      setStatus((prev) => ({
+        ...prev,
+        state: "loading",
+        message: `Loading ${nextModel}…`,
+        progress: undefined,
+      }));
+      workerRef.current.postMessage({ type: "set-model", model: nextModel });
+    },
+    [modelId],
+  );
+
   return useMemo(
     () => ({
       status,
       isTranscribing,
       transcribe,
+      model: modelId,
+      setModel,
     }),
-    [isTranscribing, status, transcribe],
+    [isTranscribing, modelId, setModel, status, transcribe],
   );
 }

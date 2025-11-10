@@ -8,6 +8,8 @@ A progressive web application that unifies three browser-native ML stacks:
 
 The UI preloads all three models, surfaces their status, and then runs a hands-free loop: *record speech → transcribe → build an LLM response → render the answer with Piper*. Everything stays inside the browser and the app installs as a PWA.
 
+Live RMS tracking, a 6-band equalizer, and silence detection mirror the microphone HUD shipped in `/home/robit/Respositories/Cygnus-App-Replit-1`, so the recorder auto-pauses a little over a second after you stop speaking. Whisper and Piper models can be swapped from dropdowns before each turn (again mirroring the Cygnus demo’s UX).
+
 ## Getting started
 
 ```bash
@@ -31,7 +33,7 @@ The PWA manifest, icons, and service worker are generated automatically (`vite-p
 ```
 src/
   components/         # Status cards, recorder CTA, conversation log
-  hooks/              # Wrap Whisper, WebLLM, Piper workers + recorder plumbing
+  hooks/              # Wrap Whisper, WebLLM, Piper workers + recorder/RMS plumbing
   lib/piper.ts        # Port of the Piper text/phoneme/audio pipeline
   utils/              # Audio helpers and IndexedDB model cache
   workers/            # Dedicated workers for Whisper ASR + Piper TTS
@@ -44,9 +46,10 @@ public/
 ## How it works
 
 1. **Model boot** – `useWhisperModel`, `useWebLLM`, and `usePiperModel` each spin up their worker/runtime immediately and stream fine-grained progress into shared `ModelStatusCard` components.
-2. **Ingress** – `useAudioRecorder` wraps `MediaRecorder`, normalises microphone blobs to mono 16 kHz buffers, and hands them to Whisper.
+2. **Ingress** – `useAudioRecorder` wraps `MediaRecorder`, normalises microphone blobs to mono 16 kHz buffers, continuously tracks RMS/EQ energy, and auto-stops once 1.3 s of silence is detected.
 3. **Reasoning** – Whisper output seeds the rolling conversation history (plus a concise system prompt). `useWebLLM` keeps a warm `MLCEngine` and calls `chat.completions.create` per turn.
 4. **Egress** – Piper runs inside a worker with the original model-cache/on-device phonemizer pipeline. A merged waveform is returned, normalised, trimmed, and played in the UI as soon as it lands.
+5. **Model controls** – The Whisper selector swaps between Tiny/Base/Small checkpoints before recording, while the Piper selector surfaces the first 60 LibriTTS voices (all 904 are ready once the worker is up).
 5. **Offline install** – `vite-plugin-pwa` precaches the app shell and the large WASM artefacts (limit bumped to 35 MB) so the experience keeps working when re-opened.
 
 ## Notes & troubleshooting

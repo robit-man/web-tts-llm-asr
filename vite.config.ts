@@ -7,6 +7,12 @@ export default defineConfig({
   worker: {
     format: "es",
   },
+  optimizeDeps: {
+    exclude: ["@mlc-ai/web-llm"],
+  },
+  ssr: {
+    noExternal: ["@mlc-ai/web-llm"],
+  },
   plugins: [
     react(),
     VitePWA({

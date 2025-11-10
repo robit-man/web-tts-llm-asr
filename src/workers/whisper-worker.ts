@@ -3,16 +3,18 @@
 import { env, pipeline } from "@xenova/transformers";
 
 type WhisperRequest =
-  | { type: "init" }
+  | { type: "init"; model?: string }
+  | { type: "set-model"; model: string }
   | { type: "transcribe"; id: number; audio: Float32Array };
 
 env.allowLocalModels = false;
 
 const ctx: DedicatedWorkerGlobalScope = self as DedicatedWorkerGlobalScope;
-const MODEL_ID = "Xenova/whisper-tiny.en";
+const DEFAULT_MODEL_ID = "Xenova/whisper-tiny.en";
 
 let transcriberPromise: Promise<any> | null = null;
 let transcriber: any | null = null;
+let currentModelId = DEFAULT_MODEL_ID;
 
 async function ensureTranscriber() {
   if (transcriber) return transcriber;
@@ -21,10 +23,12 @@ async function ensureTranscriber() {
       type: "status",
       model: "whisper",
       state: "loading",
-      message: "Initializing Whisper (tiny.en)...",
+      message: `Initializing Whisper (${currentModelId})...`,
     });
 
-    transcriberPromise = pipeline("automatic-speech-recognition", MODEL_ID, {
+    const modelToLoad = currentModelId;
+
+    transcriberPromise = pipeline("automatic-speech-recognition", modelToLoad, {
       quantized: true,
       progress_callback: (progress: {
         progress?: number;
@@ -36,7 +40,7 @@ async function ensureTranscriber() {
           type: "status",
           model: "whisper",
           state: "loading",
-          message: progress.text ?? "Downloading Whisper assets...",
+          message: progress.text ?? `Downloading ${modelToLoad}…`,
           detail: progress.url ?? progress.file,
           progress:
             progress.progress && progress.progress > 0
@@ -51,7 +55,7 @@ async function ensureTranscriber() {
           type: "status",
           model: "whisper",
           state: "ready",
-          message: "Whisper ready",
+          message: `${modelToLoad} ready`,
         });
         return instance;
       })
@@ -74,7 +78,27 @@ ctx.addEventListener(
     const data = event.data;
 
     if (data.type === "init") {
+      if (data.model) {
+        currentModelId = data.model;
+      }
       await ensureTranscriber().catch(() => {});
+      return;
+    }
+
+    if (data.type === "set-model") {
+      if (data.model && data.model !== currentModelId) {
+        currentModelId = data.model;
+        if (transcriber && typeof transcriber.dispose === "function") {
+          try {
+            transcriber.dispose();
+          } catch (error) {
+            console.warn("Error disposing Whisper model", error);
+          }
+        }
+        transcriber = null;
+        transcriberPromise = null;
+        await ensureTranscriber().catch(() => {});
+      }
       return;
     }
 
