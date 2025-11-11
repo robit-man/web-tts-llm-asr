@@ -647,15 +647,31 @@ function App() {
     };
   }, []);
 
-  // Auto-switch to first Ollama model when Ollama is toggled on
+  // Auto-switch to saved or first Ollama model when Ollama is toggled on
   useEffect(() => {
     if (llm.useOllama && llm.ollamaModels.length > 0) {
-      const firstModel = llm.ollamaModels[0].name;
-      if (llmModel !== firstModel) {
-        setLlmModel(firstModel);
+      // Try to restore saved Ollama model
+      const savedOllamaModel = localStorage.getItem("trifecta_ollama_model");
+      const modelExists = savedOllamaModel && llm.ollamaModels.some(m => m.name === savedOllamaModel);
+      const targetModel = modelExists ? savedOllamaModel : llm.ollamaModels[0].name;
+
+      // Only switch if the current model is not in the Ollama list
+      const currentModelExists = llm.ollamaModels.some(m => m.name === llmModel);
+      if (!currentModelExists) {
+        setLlmModel(targetModel);
       }
     }
-  }, [llm.useOllama, llm.ollamaModels, llmModel, setLlmModel]);
+  }, [llm.useOllama, llm.ollamaModels.length]); // Only depend on count, not the full array
+
+  // Save Ollama model selection to localStorage when it changes
+  useEffect(() => {
+    if (llm.useOllama && llmModel) {
+      const modelExists = llm.ollamaModels.some(m => m.name === llmModel);
+      if (modelExists) {
+        localStorage.setItem("trifecta_ollama_model", llmModel);
+      }
+    }
+  }, [llm.useOllama, llmModel, llm.ollamaModels]);
 
   return (
     <div className="app">

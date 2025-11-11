@@ -115,13 +115,31 @@ export function useWebLLM(initialModel = DEFAULT_MODEL) {
   const [isResponding, setIsResponding] = useState(false);
   const [partialResponse, setPartialResponse] = useState("");
   const [modelId, setModelId] = useState(initialModel);
-  const [useOllama, setUseOllama] = useState(false);
+
+  // Initialize useOllama from localStorage
+  const [useOllama, setUseOllama] = useState(() => {
+    const saved = localStorage.getItem("trifecta_use_ollama");
+    return saved === "true";
+  });
+
   const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
   const engineRef = useRef<webllm.MLCEngineInterface | null>(null);
+  const ollamaFetchedRef = useRef(false);
+
+  // Save Ollama toggle state to localStorage
+  useEffect(() => {
+    localStorage.setItem("trifecta_use_ollama", String(useOllama));
+  }, [useOllama]);
 
   // Fetch Ollama models when Ollama mode is enabled
   useEffect(() => {
-    if (!useOllama) return;
+    if (!useOllama) {
+      ollamaFetchedRef.current = false;
+      return;
+    }
+
+    // Only fetch if we haven't fetched yet
+    if (ollamaFetchedRef.current) return;
 
     const fetchModels = async () => {
       setStatus({
@@ -133,6 +151,7 @@ export function useWebLLM(initialModel = DEFAULT_MODEL) {
 
       const models = await fetchOllamaModels();
       setOllamaModels(models);
+      ollamaFetchedRef.current = true;
 
       if (models.length === 0) {
         setStatus({
@@ -340,6 +359,38 @@ export function useWebLLM(initialModel = DEFAULT_MODEL) {
     }
   }, []);
 
+  const refreshOllamaModels = useCallback(async () => {
+    if (!useOllama) return;
+
+    setStatus({
+      model: "webllm",
+      label: "Ollama Reasoner",
+      state: "loading",
+      message: "Refreshing Ollama models...",
+    });
+
+    const models = await fetchOllamaModels();
+    setOllamaModels(models);
+
+    if (models.length === 0) {
+      setStatus({
+        model: "webllm",
+        label: "Ollama Reasoner",
+        state: "error",
+        message: "No Ollama models found",
+        detail: "Ensure Ollama is running at http://localhost:11434",
+      });
+    } else {
+      setStatus({
+        model: "webllm",
+        label: "Ollama Reasoner",
+        state: "ready",
+        message: `${models.length} model${models.length > 1 ? 's' : ''} available`,
+        detail: `Connected to Ollama at localhost:11434`,
+      });
+    }
+  }, [useOllama]);
+
   return useMemo(
     () => ({
       status,
@@ -351,7 +402,8 @@ export function useWebLLM(initialModel = DEFAULT_MODEL) {
       useOllama,
       toggleOllama,
       ollamaModels,
+      refreshOllamaModels,
     }),
-    [generate, isResponding, modelId, partialResponse, setModel, status, useOllama, toggleOllama, ollamaModels],
+    [generate, isResponding, modelId, partialResponse, setModel, status, useOllama, toggleOllama, ollamaModels, refreshOllamaModels],
   );
 }
