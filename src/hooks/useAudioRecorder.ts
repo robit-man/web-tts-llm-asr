@@ -63,7 +63,7 @@ export function useAudioRecorder({
   const monitorRafRef = useRef<number | null>(null);
   const audioChunksRef = useRef<Float32Array[]>([]);
 
-  const noiseFloorRef = useRef(0.0008);
+  const noiseFloorRef = useRef(0.0004); // Lower initial threshold for quieter speech
   const recordingStartedAtRef = useRef<number>(0);
   const lastSpeechTimeRef = useRef<number>(0);
   const speechActiveRef = useRef(false);
@@ -106,7 +106,7 @@ export function useAudioRecorder({
     audioChunksRef.current = [];
     speechActiveRef.current = false;
     silenceTriggeredRef.current = false;
-    noiseFloorRef.current = 0.0008;
+    noiseFloorRef.current = 0.0004; // Lower threshold for quieter speech
     stopReasonRef.current = 'manual';
   }, [releaseAudioResources]);
 
@@ -229,9 +229,9 @@ export function useAudioRecorder({
       const rms = Math.sqrt(sumSquares / timeBuffer.length);
       const now = performance.now();
 
-      // Adaptive thresholds based on noise floor
-      const dynamicThreshold = Math.max(noiseFloorRef.current * 1.8, 0.0008);
-      const silenceThreshold = Math.max(dynamicThreshold * 0.6, noiseFloorRef.current * 1.2);
+      // Adaptive thresholds based on noise floor (more forgiving for quiet speech)
+      const dynamicThreshold = Math.max(noiseFloorRef.current * 1.3, 0.0004);
+      const silenceThreshold = Math.max(dynamicThreshold * 0.5, noiseFloorRef.current * 1.1);
       const frameDurationMs = (analyser.fftSize / analyser.context.sampleRate) * 1000;
       const isRecorderRecording = recorderRef.current?.state === 'recording';
       const isCurrentlyActive = isRecorderRecording && (speechActiveRef.current || rms > dynamicThreshold);
@@ -423,7 +423,7 @@ export function useAudioRecorder({
       }
 
       chunksRef.current = [];
-      noiseFloorRef.current = Math.max(noiseFloorRef.current, 0.0008);
+      noiseFloorRef.current = Math.max(noiseFloorRef.current, 0.0004); // Lower threshold for quieter speech
       recordingStartedAtRef.current = performance.now();
       lastSpeechTimeRef.current = recordingStartedAtRef.current;
       speechActiveRef.current = false;
