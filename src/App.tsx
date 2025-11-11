@@ -647,6 +647,16 @@ function App() {
     };
   }, []);
 
+  // Auto-switch to first Ollama model when Ollama is toggled on
+  useEffect(() => {
+    if (llm.useOllama && llm.ollamaModels.length > 0) {
+      const firstModel = llm.ollamaModels[0].name;
+      if (llmModel !== firstModel) {
+        setLlmModel(firstModel);
+      }
+    }
+  }, [llm.useOllama, llm.ollamaModels, llmModel, setLlmModel]);
+
   return (
     <div className="app">
       <header className="app__header">
@@ -681,24 +691,53 @@ function App() {
               </div>
             )}
             {status.model === "webllm" && (
-              <div className="model-control">
-                <label htmlFor="webllm-model">Model</label>
-                <select
-                  id="webllm-model"
-                  value={llmModel}
-                  onChange={(event) => setLlmModel(event.target.value)}
-                  disabled={recorder.isRecording || loopBusy}
-                >
-                  {WEBLLM_OPTIONS.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                  {!WEBLLM_OPTIONS.some((option) => option.id === llmModel) && (
-                    <option value={llmModel}>{llmModel}</option>
-                  )}
-                </select>
-              </div>
+              <>
+                <div className="model-control">
+                  <label htmlFor="use-ollama" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      id="use-ollama"
+                      checked={llm.useOllama}
+                      onChange={(event) => llm.toggleOllama(event.target.checked)}
+                      disabled={recorder.isRecording || loopBusy}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <span>Use Ollama</span>
+                  </label>
+                </div>
+                <div className="model-control">
+                  <label htmlFor="webllm-model">Model</label>
+                  <select
+                    id="webllm-model"
+                    value={llmModel}
+                    onChange={(event) => setLlmModel(event.target.value)}
+                    disabled={recorder.isRecording || loopBusy}
+                  >
+                    {llm.useOllama ? (
+                      llm.ollamaModels.length > 0 ? (
+                        llm.ollamaModels.map((model) => (
+                          <option key={model.name} value={model.name}>
+                            {model.name}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">No Ollama models found</option>
+                      )
+                    ) : (
+                      <>
+                        {WEBLLM_OPTIONS.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                        {!WEBLLM_OPTIONS.some((option) => option.id === llmModel) && (
+                          <option value={llmModel}>{llmModel}</option>
+                        )}
+                      </>
+                    )}
+                  </select>
+                </div>
+              </>
             )}
             {status.model === "piper" && (
               <div className="model-control">

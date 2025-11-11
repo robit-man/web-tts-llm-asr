@@ -19,6 +19,13 @@ declare global {
 
 const DEFAULT_MODEL = "Llama-3.2-1B-Instruct-q4f32_1-MLC";
 const ENGINE_CACHE_KEY = "__trifecta_webllm_engine__";
+const OLLAMA_BASE_URL = "http://localhost:11434";
+
+export interface OllamaModel {
+  name: string;
+  size: number;
+  modified_at: string;
+}
 
 type EngineStore = {
   engine: webllm.MLCEngineInterface | null;
@@ -84,6 +91,20 @@ async function obtainEngine(
   return promise;
 }
 
+async function fetchOllamaModels(): Promise<OllamaModel[]> {
+  try {
+    const response = await fetch(`${OLLAMA_BASE_URL}/api/tags`);
+    if (!response.ok) {
+      throw new Error(`Ollama API error: ${response.status}`);
+    }
+    const data = await response.json();
+    return data.models || [];
+  } catch (error) {
+    console.error("[Ollama] Failed to fetch models:", error);
+    return [];
+  }
+}
+
 export function useWebLLM(initialModel = DEFAULT_MODEL) {
   const [status, setStatus] = useState<ModelStatus>({
     model: "webllm",
@@ -94,9 +115,51 @@ export function useWebLLM(initialModel = DEFAULT_MODEL) {
   const [isResponding, setIsResponding] = useState(false);
   const [partialResponse, setPartialResponse] = useState("");
   const [modelId, setModelId] = useState(initialModel);
+  const [useOllama, setUseOllama] = useState(false);
+  const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
   const engineRef = useRef<webllm.MLCEngineInterface | null>(null);
 
+  // Fetch Ollama models when Ollama mode is enabled
   useEffect(() => {
+    if (!useOllama) return;
+
+    const fetchModels = async () => {
+      setStatus({
+        model: "webllm",
+        label: "Ollama Reasoner",
+        state: "loading",
+        message: "Fetching Ollama models...",
+      });
+
+      const models = await fetchOllamaModels();
+      setOllamaModels(models);
+
+      if (models.length === 0) {
+        setStatus({
+          model: "webllm",
+          label: "Ollama Reasoner",
+          state: "error",
+          message: "No Ollama models found",
+          detail: "Ensure Ollama is running at http://localhost:11434",
+        });
+      } else {
+        setStatus({
+          model: "webllm",
+          label: "Ollama Reasoner",
+          state: "ready",
+          message: `${models.length} model${models.length > 1 ? 's' : ''} available`,
+          detail: `Connected to Ollama at localhost:11434`,
+        });
+      }
+    };
+
+    fetchModels();
+  }, [useOllama]);
+
+  useEffect(() => {
+    // Skip WebLLM loading if using Ollama
+    if (useOllama) return;
+
     let cancelled = false;
 
     const load = async () => {
@@ -167,39 +230,96 @@ export function useWebLLM(initialModel = DEFAULT_MODEL) {
     return () => {
       cancelled = true;
     };
-  }, [modelId]);
+  }, [modelId, useOllama]);
 
   const generate = useCallback(
     async (messages: webllm.ChatCompletionMessageParam[]) => {
-      if (!engineRef.current) {
-        throw new Error("WebLLM runtime is not ready yet");
-      }
-
       setIsResponding(true);
       setPartialResponse("");
-      try {
-        const completion = await engineRef.current.chat.completions.create({
-          messages,
-          temperature: 0.7,
-          max_tokens: 1024,
-          stream: true,
-        });
 
-        let fullText = "";
-        for await (const chunk of completion) {
-          const delta = chunk.choices?.[0]?.delta?.content ?? "";
-          if (delta) {
-            fullText += delta;
-            setPartialResponse(fullText);
+      try {
+        if (useOllama) {
+          // Use Ollama endpoint (OpenAI-compatible API)
+          const response = await fetch(`${OLLAMA_BASE_URL}/v1/chat/completions`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: modelId,
+              messages,
+              temperature: 0.7,
+              max_tokens: 1024,
+              stream: true,
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
           }
+
+          const reader = response.body?.getReader();
+          if (!reader) {
+            throw new Error("Failed to get response reader");
+          }
+
+          const decoder = new TextDecoder();
+          let fullText = "";
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split("\n").filter((line) => line.trim().startsWith("data: "));
+
+            for (const line of lines) {
+              const data = line.replace(/^data: /, "");
+              if (data === "[DONE]") break;
+
+              try {
+                const parsed = JSON.parse(data);
+                const delta = parsed.choices?.[0]?.delta?.content ?? "";
+                if (delta) {
+                  fullText += delta;
+                  setPartialResponse(fullText);
+                }
+              } catch {
+                // Skip invalid JSON lines
+              }
+            }
+          }
+
+          return fullText.trim();
+        } else {
+          // Use WebLLM
+          if (!engineRef.current) {
+            throw new Error("WebLLM runtime is not ready yet");
+          }
+
+          const completion = await engineRef.current.chat.completions.create({
+            messages,
+            temperature: 0.7,
+            max_tokens: 1024,
+            stream: true,
+          });
+
+          let fullText = "";
+          for await (const chunk of completion) {
+            const delta = chunk.choices?.[0]?.delta?.content ?? "";
+            if (delta) {
+              fullText += delta;
+              setPartialResponse(fullText);
+            }
+          }
+          return fullText.trim();
         }
-        return fullText.trim();
       } finally {
         setIsResponding(false);
         setPartialResponse("");
       }
     },
-    [],
+    [useOllama, modelId],
   );
 
   const setModel = useCallback((newModelId: string) => {
@@ -212,6 +332,14 @@ export function useWebLLM(initialModel = DEFAULT_MODEL) {
     store.promise = null;
   }, [modelId]);
 
+  const toggleOllama = useCallback((enabled: boolean) => {
+    setUseOllama(enabled);
+    if (!enabled) {
+      // Clear Ollama models when switching back to WebLLM
+      setOllamaModels([]);
+    }
+  }, []);
+
   return useMemo(
     () => ({
       status,
@@ -220,7 +348,10 @@ export function useWebLLM(initialModel = DEFAULT_MODEL) {
       partialResponse,
       model: modelId,
       setModel,
+      useOllama,
+      toggleOllama,
+      ollamaModels,
     }),
-    [generate, isResponding, modelId, partialResponse, setModel, status],
+    [generate, isResponding, modelId, partialResponse, setModel, status, useOllama, toggleOllama, ollamaModels],
   );
 }
