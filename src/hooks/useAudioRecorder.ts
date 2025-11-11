@@ -22,7 +22,7 @@ type StopReason = 'manual' | 'silence' | 'max_duration';
 const DEFAULT_EQ_BANDS = 6;
 const DEFAULT_MIN_RECORDING_MS = 450;
 const DEFAULT_MAX_RECORDING_MS = 15000;
-const DEFAULT_SILENCE_DURATION_MS = 1200;
+const DEFAULT_SILENCE_DURATION_MS = 900; // Reduced from 1200ms - faster cutoff with better detection
 const MIN_FREQUENCY = 120;
 const MAX_FREQUENCY = 5200;
 const EQ_DECAY = 0.6;
@@ -64,11 +64,14 @@ export function useAudioRecorder({
   const audioChunksRef = useRef<Float32Array[]>([]);
 
   const noiseFloorRef = useRef(0.0004); // Lower initial threshold for quieter speech
+  const backgroundNoiseRef = useRef(0.0004); // Track background noise separately
+  const smoothedEnergyRef = useRef(0); // Smoothed energy for stable detection
   const recordingStartedAtRef = useRef<number>(0);
   const lastSpeechTimeRef = useRef<number>(0);
   const speechActiveRef = useRef(false);
   const silenceTriggeredRef = useRef(false);
   const accumulatedSilenceRef = useRef(0);
+  const speechFramesRef = useRef(0); // Count consecutive speech frames
   const eqUpdateTimeRef = useRef(0);
   const eqLevelsRef = useRef<number[]>(Array(eqBands).fill(6));
   const stopReasonRef = useRef<StopReason>('manual');
@@ -107,6 +110,9 @@ export function useAudioRecorder({
     speechActiveRef.current = false;
     silenceTriggeredRef.current = false;
     noiseFloorRef.current = 0.0004; // Lower threshold for quieter speech
+    backgroundNoiseRef.current = 0.0004;
+    smoothedEnergyRef.current = 0;
+    speechFramesRef.current = 0;
     stopReasonRef.current = 'manual';
   }, [releaseAudioResources]);
 
@@ -229,12 +235,52 @@ export function useAudioRecorder({
       const rms = Math.sqrt(sumSquares / timeBuffer.length);
       const now = performance.now();
 
-      // Adaptive thresholds based on noise floor (more forgiving for quiet speech)
-      const dynamicThreshold = Math.max(noiseFloorRef.current * 1.3, 0.0004);
-      const silenceThreshold = Math.max(dynamicThreshold * 0.5, noiseFloorRef.current * 1.1);
+      // Calculate spectral energy in speech frequency range (300-3400Hz)
+      const nyquist = analyser.context.sampleRate / 2;
+      const binCount = analyser.frequencyBinCount;
+      const speechMinHz = 300;
+      const speechMaxHz = 3400;
+      const speechMinBin = Math.floor((speechMinHz / nyquist) * binCount);
+      const speechMaxBin = Math.ceil((speechMaxHz / nyquist) * binCount);
+
+      let speechEnergy = 0;
+      let totalEnergy = 0;
+      for (let i = 0; i < binCount; i++) {
+        const magnitude = frequencyBuffer[i] / 255; // Normalize to 0-1
+        totalEnergy += magnitude;
+        if (i >= speechMinBin && i <= speechMaxBin) {
+          speechEnergy += magnitude;
+        }
+      }
+      const speechRatio = totalEnergy > 0 ? speechEnergy / totalEnergy : 0;
+
+      // Calculate zero-crossing rate (helps distinguish speech from noise)
+      let zeroCrossings = 0;
+      for (let i = 1; i < timeBuffer.length; i++) {
+        if ((timeBuffer[i] >= 0 && timeBuffer[i - 1] < 0) ||
+            (timeBuffer[i] < 0 && timeBuffer[i - 1] >= 0)) {
+          zeroCrossings++;
+        }
+      }
+      const zcr = zeroCrossings / timeBuffer.length;
+
+      // Smooth energy using exponential moving average
+      const energyAlpha = 0.3;
+      smoothedEnergyRef.current = energyAlpha * rms + (1 - energyAlpha) * smoothedEnergyRef.current;
+
+      // Adaptive thresholds based on background noise and speech characteristics
+      const dynamicThreshold = Math.max(backgroundNoiseRef.current * 2.0, 0.0004);
+      const silenceThreshold = Math.max(backgroundNoiseRef.current * 1.3, 0.0003);
+
+      // Speech detection requires: high energy + speech-like spectrum + appropriate ZCR
+      const hasEnergy = smoothedEnergyRef.current > dynamicThreshold;
+      const hasSpeechSpectrum = speechRatio > 0.25; // At least 25% energy in speech range
+      const hasReasonableZCR = zcr > 0.02 && zcr < 0.4; // Typical speech range
+      const isSpeechLike = hasEnergy && (hasSpeechSpectrum || hasReasonableZCR);
+
       const frameDurationMs = (analyser.fftSize / analyser.context.sampleRate) * 1000;
       const isRecorderRecording = recorderRef.current?.state === 'recording';
-      const isCurrentlyActive = isRecorderRecording && (speechActiveRef.current || rms > dynamicThreshold);
+      const isCurrentlyActive = isRecorderRecording && (speechActiveRef.current || isSpeechLike);
 
       // Update EQ visualization
       if (now - eqUpdateTimeRef.current > 90) {
@@ -283,31 +329,71 @@ export function useAudioRecorder({
         }
       }
 
-      // VAD logic
+      // VAD logic with hysteresis and improved noise adaptation
       if (enableVAD) {
-        if (rms > dynamicThreshold) {
-          speechActiveRef.current = true;
-          lastSpeechTimeRef.current = now;
-          accumulatedSilenceRef.current = 0;
-          noiseFloorRef.current = Math.min(noiseFloorRef.current * 0.9 + rms * 0.1, 0.02);
-          silenceTriggeredRef.current = false;
-        } else {
-          if (!speechActiveRef.current) {
-            noiseFloorRef.current = noiseFloorRef.current * 0.92 + rms * 0.08;
+        if (isSpeechLike) {
+          // Speech detected - increment speech frame counter
+          speechFramesRef.current++;
+
+          // Require 3 consecutive speech frames to activate (prevents false triggers)
+          if (speechFramesRef.current >= 3 || speechActiveRef.current) {
+            if (!speechActiveRef.current) {
+              console.log('[VAD] Speech onset detected:', {
+                energy: smoothedEnergyRef.current.toFixed(4),
+                threshold: dynamicThreshold.toFixed(4),
+                speechRatio: speechRatio.toFixed(3),
+                zcr: zcr.toFixed(3),
+              });
+            }
+            speechActiveRef.current = true;
+            lastSpeechTimeRef.current = now;
+            accumulatedSilenceRef.current = 0;
+            silenceTriggeredRef.current = false;
+
+            // Adapt noise floor more slowly during speech
+            backgroundNoiseRef.current = Math.min(
+              backgroundNoiseRef.current * 0.98 + smoothedEnergyRef.current * 0.02,
+              0.015
+            );
           }
+        } else {
+          // No speech detected
+          speechFramesRef.current = 0;
+
+          // Update background noise estimate when not speaking
+          if (!speechActiveRef.current) {
+            backgroundNoiseRef.current = backgroundNoiseRef.current * 0.95 + smoothedEnergyRef.current * 0.05;
+            // Cap background noise to prevent runaway adaptation
+            backgroundNoiseRef.current = Math.min(backgroundNoiseRef.current, 0.01);
+          }
+
+          // Check for silence during active speech
           if (speechActiveRef.current) {
             accumulatedSilenceRef.current += frameDurationMs;
             const recordingElapsed = now - recordingStartedAtRef.current;
+
+            // More sophisticated silence check: low energy AND low speech characteristics
+            const isTrueSilence =
+              smoothedEnergyRef.current < silenceThreshold &&
+              speechRatio < 0.15; // Very little speech-range energy
+
             if (
               !silenceTriggeredRef.current &&
               accumulatedSilenceRef.current >= silenceDurationMs &&
-              rms < silenceThreshold &&
+              isTrueSilence &&
               recordingElapsed > minRecordingMs &&
               recorderRef.current?.state === 'recording'
             ) {
+              console.log('[VAD] Silence detected:', {
+                energy: smoothedEnergyRef.current.toFixed(4),
+                threshold: silenceThreshold.toFixed(4),
+                speechRatio: speechRatio.toFixed(3),
+                silenceDuration: accumulatedSilenceRef.current.toFixed(0),
+              });
               silenceTriggeredRef.current = true;
               speechActiveRef.current = false;
               accumulatedSilenceRef.current = 0;
+              speechFramesRef.current = 0;
               stop('silence');
             }
           }
@@ -423,12 +509,15 @@ export function useAudioRecorder({
       }
 
       chunksRef.current = [];
-      noiseFloorRef.current = Math.max(noiseFloorRef.current, 0.0004); // Lower threshold for quieter speech
+      // Reset VAD state for new recording
+      backgroundNoiseRef.current = Math.max(backgroundNoiseRef.current, 0.0004);
+      smoothedEnergyRef.current = 0;
       recordingStartedAtRef.current = performance.now();
       lastSpeechTimeRef.current = recordingStartedAtRef.current;
       speechActiveRef.current = false;
       silenceTriggeredRef.current = false;
       accumulatedSilenceRef.current = 0;
+      speechFramesRef.current = 0;
 
       console.log('[Recorder] Starting recording:', {
         state: recorder.state,

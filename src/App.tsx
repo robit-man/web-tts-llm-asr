@@ -415,7 +415,7 @@ function App() {
     onLevels: setLevelSnapshot,
     // Remove onAudioChunk - we don't need streaming chunks for batch mode
     enableVAD: true,
-    silenceDurationMs: 1200,
+    silenceDurationMs: 900, // Faster response with improved VAD
   });
   const pipelineBusy = isProcessing || isTranscribing || isResponding || isSpeaking;
   const loopBusy = pipelineBusy || (!voiceSessionActive && recorder.isRecording);
@@ -524,6 +524,7 @@ function App() {
     if (!ready || pipelineBusy || recorder.isRecording || segmentPending) {
       return;
     }
+    console.log('[VoiceSession] Conditions met, starting recording...');
     void handleStartRecording();
   }, [handleStartRecording, pipelineBusy, ready, recorder.isRecording, segmentPending, voiceSessionActive]);
 
@@ -637,6 +638,30 @@ function App() {
       setVoiceSessionError(null);
     }
   }, [recorder.isRecording, voiceSessionActive, voiceSessionError]);
+
+  // Auto-restart recording when voice session is idle or has an error (continuous loop)
+  useEffect(() => {
+    if (!voiceSessionActive) return;
+    // Restart on idle (after TTS) or error (after failed transcription/etc)
+    if (voiceSessionPhase !== "idle" && voiceSessionPhase !== "error") return;
+    if (pipelineBusy) return;
+    if (recorder.isRecording) return;
+    if (!ready) return;
+
+    // All processing complete, restart listening after brief delay
+    console.log('[VoiceSession] Pipeline ready for next cycle, scheduling recording restart...');
+    const timeoutId = setTimeout(() => {
+      if (voiceSessionActive && !pipelineBusy && !recorder.isRecording && ready) {
+        console.log('[VoiceSession] Restarting recording (continuous loop)');
+        handleStartRecording().catch((error) => {
+          console.error('[VoiceSession] Failed to restart recording:', error);
+          setVoiceSessionError((error as Error).message ?? "Failed to restart recording");
+        });
+      }
+    }, 800); // Brief delay for smoother transitions
+
+    return () => clearTimeout(timeoutId);
+  }, [voiceSessionActive, voiceSessionPhase, pipelineBusy, recorder.isRecording, ready, handleStartRecording]);
 
   useEffect(() => {
     return () => {
