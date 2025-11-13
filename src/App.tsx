@@ -310,6 +310,7 @@ function App() {
 
   const handleRecordingComplete = useCallback(
     async (blob: Blob | null) => {
+      console.log('[SegmentPending] ❌ Setting to FALSE - handleRecordingComplete started');
       setSegmentPending(false);
 
       console.log('[App] handleRecordingComplete called:', {
@@ -321,7 +322,10 @@ function App() {
       if (!blob) {
         setCapturedAudioBuffer(null);
         if (voiceSessionActive) {
+          console.log('[handleRecordingComplete] No blob - clearing error after delay');
           setVoiceSessionError("No speech detected. Listening again.");
+          // Clear error after a moment to allow restart
+          setTimeout(() => setVoiceSessionError(null), 1500);
         } else {
           setAlert("I didn't hear anything. Try again.");
         }
@@ -359,7 +363,9 @@ function App() {
           const message = "I didn't hear anything. Try again.";
           setAlert(message);
           if (voiceSessionActive) {
+            console.log('[handleRecordingComplete] No rawText - clearing error after delay');
             setVoiceSessionError(message);
+            setTimeout(() => setVoiceSessionError(null), 1500);
           }
           return;
         }
@@ -367,7 +373,9 @@ function App() {
         if (BLANK_AUDIO_PATTERN.test(rawText)) {
           const message = "Silence detected. Listening…";
           if (voiceSessionActive) {
+            console.log('[handleRecordingComplete] Blank audio pattern - clearing error after delay');
             setVoiceSessionError(message);
+            setTimeout(() => setVoiceSessionError(null), 1500);
           } else {
             setAlert(message);
           }
@@ -378,7 +386,9 @@ function App() {
         if (!sanitized) {
           const message = "Silence detected. Listening…";
           if (voiceSessionActive) {
+            console.log('[handleRecordingComplete] Empty sanitized text - clearing error after delay');
             setVoiceSessionError(message);
+            setTimeout(() => setVoiceSessionError(null), 1500);
           } else {
             setAlert(message);
           }
@@ -387,6 +397,8 @@ function App() {
 
         if (voiceSessionActive) {
           if (sanitized === lastUtteranceRef.current) {
+            console.log('[handleRecordingComplete] Duplicate utterance - ignoring but allowing restart');
+            // Don't set an error, just skip processing and allow restart
             return;
           }
           lastUtteranceRef.current = sanitized;
@@ -401,7 +413,9 @@ function App() {
         const message = (error as Error).message ?? "Unable to transcribe audio.";
         setAlert(message);
         if (voiceSessionActive) {
+          console.log('[handleRecordingComplete] Transcription error - clearing error after delay');
           setVoiceSessionError(message);
+          setTimeout(() => setVoiceSessionError(null), 2000);
         }
       } finally {
         setIsProcessing(false);
@@ -422,12 +436,31 @@ function App() {
   const voiceSessionActionLabel = recorder.isRecording ? "Transcribe now" : "Start capture";
 
   const handleStartRecording = useCallback(async () => {
-    if (recorder.isRecording || pipelineBusy || !ready) {
+    console.log('[handleStartRecording] Called with conditions:', {
+      isRecording: recorder.isRecording,
+      pipelineBusy,
+      ready,
+    });
+
+    if (recorder.isRecording) {
+      console.log('[handleStartRecording] ❌ Already recording, skipping');
       return;
     }
+    if (pipelineBusy) {
+      console.log('[handleStartRecording] ❌ Pipeline busy, skipping');
+      return;
+    }
+    if (!ready) {
+      console.log('[handleStartRecording] ❌ Not ready, skipping');
+      return;
+    }
+
+    console.log('[handleStartRecording] ✅ Starting recorder...');
     try {
       await recorder.start();
+      console.log('[handleStartRecording] ✅ Recorder started successfully');
     } catch (error) {
+      console.error('[handleStartRecording] ❌ Failed to start recorder:', error);
       setAlert((error as Error).message ?? "Unable to access microphone.");
       if (voiceSessionActive) {
         setVoiceSessionError((error as Error).message ?? "Unable to access microphone.");
@@ -518,13 +551,21 @@ function App() {
   }, [transcribe, whisperStatus.state]);
 
   useEffect(() => {
+    console.log('[VoiceSession] Initial start effect check:', {
+      voiceSessionActive,
+      ready,
+      pipelineBusy,
+      isRecording: recorder.isRecording,
+      segmentPending,
+    });
+
     if (!voiceSessionActive) {
       return;
     }
     if (!ready || pipelineBusy || recorder.isRecording || segmentPending) {
       return;
     }
-    console.log('[VoiceSession] Conditions met, starting recording...');
+    console.log('[VoiceSession] 🎤 Initial start effect - starting recording...');
     void handleStartRecording();
   }, [handleStartRecording, pipelineBusy, ready, recorder.isRecording, segmentPending, voiceSessionActive]);
 
@@ -554,12 +595,16 @@ function App() {
   useEffect(() => {
     if (!voiceSessionActive) {
       previousRecordingStateRef.current = recorder.isRecording;
+      console.log('[SegmentPending] Clearing because session not active');
       setSegmentPending(false);
       return;
     }
-    if (previousRecordingStateRef.current && !recorder.isRecording) {
-      setSegmentPending(true);
-    }
+    // Don't automatically set segmentPending here - let handleRecordingComplete manage it
+    // This prevents race conditions where segmentPending gets stuck at true
+    console.log('[SegmentPending] Recording state changed:', {
+      was: previousRecordingStateRef.current,
+      now: recorder.isRecording,
+    });
     previousRecordingStateRef.current = recorder.isRecording;
   }, [recorder.isRecording, voiceSessionActive]);
 
@@ -612,6 +657,7 @@ function App() {
       return;
     }
 
+    console.log('[VoiceSession] 🟢 All conditions clear, setting phase to IDLE');
     setVoiceSessionPhase("idle");
     setVoiceSessionStatus("Standing by. We'll listen again in a moment.");
   }, [
@@ -641,27 +687,64 @@ function App() {
 
   // Auto-restart recording when voice session is idle or has an error (continuous loop)
   useEffect(() => {
-    if (!voiceSessionActive) return;
+    console.log('[VoiceSession] Auto-restart check:', {
+      voiceSessionActive,
+      voiceSessionPhase,
+      pipelineBusy,
+      segmentPending,
+      isRecording: recorder.isRecording,
+      ready,
+    });
+
+    if (!voiceSessionActive) {
+      console.log('[VoiceSession] ❌ Not active, skipping restart');
+      return;
+    }
     // Restart on idle (after TTS) or error (after failed transcription/etc)
-    if (voiceSessionPhase !== "idle" && voiceSessionPhase !== "error") return;
-    if (pipelineBusy) return;
-    if (recorder.isRecording) return;
-    if (!ready) return;
+    if (voiceSessionPhase !== "idle" && voiceSessionPhase !== "error") {
+      console.log('[VoiceSession] ❌ Wrong phase, skipping restart. Phase:', voiceSessionPhase);
+      return;
+    }
+    if (segmentPending) {
+      console.log('[VoiceSession] ❌ Segment pending, skipping restart');
+      return;
+    }
+    if (pipelineBusy) {
+      console.log('[VoiceSession] ❌ Pipeline busy, skipping restart');
+      return;
+    }
+    if (recorder.isRecording) {
+      console.log('[VoiceSession] ❌ Already recording, skipping restart');
+      return;
+    }
+    if (!ready) {
+      console.log('[VoiceSession] ❌ Not ready, skipping restart');
+      return;
+    }
 
     // All processing complete, restart listening after brief delay
-    console.log('[VoiceSession] Pipeline ready for next cycle, scheduling recording restart...');
+    console.log('[VoiceSession] ✅ Pipeline ready for next cycle, scheduling recording restart...');
     const timeoutId = setTimeout(() => {
-      if (voiceSessionActive && !pipelineBusy && !recorder.isRecording && ready) {
-        console.log('[VoiceSession] Restarting recording (continuous loop)');
+      console.log('[VoiceSession] Timer fired, checking conditions again...');
+      if (voiceSessionActive && !segmentPending && !pipelineBusy && !recorder.isRecording && ready) {
+        console.log('[VoiceSession] ✅ Restarting recording (continuous loop)');
         handleStartRecording().catch((error) => {
           console.error('[VoiceSession] Failed to restart recording:', error);
           setVoiceSessionError((error as Error).message ?? "Failed to restart recording");
+        });
+      } else {
+        console.log('[VoiceSession] ❌ Conditions changed, not restarting:', {
+          voiceSessionActive,
+          segmentPending,
+          pipelineBusy,
+          isRecording: recorder.isRecording,
+          ready,
         });
       }
     }, 800); // Brief delay for smoother transitions
 
     return () => clearTimeout(timeoutId);
-  }, [voiceSessionActive, voiceSessionPhase, pipelineBusy, recorder.isRecording, ready, handleStartRecording]);
+  }, [voiceSessionActive, voiceSessionPhase, segmentPending, pipelineBusy, recorder.isRecording, ready, handleStartRecording]);
 
   useEffect(() => {
     return () => {

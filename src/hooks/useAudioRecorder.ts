@@ -78,6 +78,8 @@ export function useAudioRecorder({
 
   const stopMonitor = useCallback(() => {
     if (monitorRafRef.current !== null) {
+      console.log('[Monitor] ⏹️  Stopping monitoring loop, RAF ID:', monitorRafRef.current);
+      console.trace('[Monitor] stopMonitor called from:');
       cancelAnimationFrame(monitorRafRef.current);
       monitorRafRef.current = null;
     }
@@ -120,12 +122,33 @@ export function useAudioRecorder({
     async (stream: MediaStream) => {
       if (!audioContextRef.current) {
         audioContextRef.current = new AudioContext();
+        console.log('[Analyser] Created new AudioContext');
       }
 
-      try {
-        await audioContextRef.current.resume();
-      } catch {
-        // ignore resume errors
+      const ctx = audioContextRef.current;
+      console.log('[Analyser] AudioContext state before resume:', ctx.state);
+
+      // Ensure AudioContext is running
+      if (ctx.state === 'suspended' || ctx.state === 'closed') {
+        try {
+          await ctx.resume();
+          console.log('[Analyser] AudioContext resumed, new state:', ctx.state);
+        } catch (error) {
+          console.error('[Analyser] Failed to resume AudioContext:', error);
+          // If resume fails, recreate the AudioContext
+          audioContextRef.current = new AudioContext();
+          console.log('[Analyser] Created new AudioContext after resume failure');
+        }
+      }
+
+      // Verify context is now running
+      if (audioContextRef.current.state !== 'running') {
+        console.warn('[Analyser] AudioContext not running, attempting to start:', audioContextRef.current.state);
+        try {
+          await audioContextRef.current.resume();
+        } catch (error) {
+          console.error('[Analyser] Still failed to resume AudioContext:', error);
+        }
       }
 
       analyserSourceRef.current?.disconnect();
@@ -140,6 +163,8 @@ export function useAudioRecorder({
       analyser.minDecibels = -90;
       analyser.maxDecibels = -10;
       source.connect(analyser);
+
+      console.log('[Analyser] Created new analyser, AudioContext state:', audioContextRef.current.state);
 
       // Set up ScriptProcessorNode for raw audio capture if callback is provided
       if (onAudioChunk) {
@@ -210,22 +235,50 @@ export function useAudioRecorder({
   const startMonitoringLevels = useCallback(() => {
     // Monitor continuously while stream exists, not just while recording (like Cygnus)
     if (!analyserRef.current) {
+      console.error('[Monitoring] Cannot start - no analyser!');
       stopMonitor();
       return;
     }
 
+    console.log('[Monitoring] Starting monitoring loop', {
+      hasAnalyser: !!analyserRef.current,
+      hasAudioContext: !!audioContextRef.current,
+      audioContextState: audioContextRef.current?.state,
+      streamActive: streamRef.current?.active,
+    });
+
     const analyser = analyserRef.current;
     const timeBuffer = new Float32Array(analyser.fftSize);
     const frequencyBuffer = new Uint8Array(analyser.frequencyBinCount);
+    let lastHealthCheck = performance.now();
+    let loopCount = 0;
 
     const detect = () => {
-      if (!analyserRef.current) {
-        monitorRafRef.current = null;
-        return;
-      }
+      // Wrap entire detect in try-catch to prevent loop from dying
+      try {
+        loopCount++;
 
-      analyser.getFloatTimeDomainData(timeBuffer);
-      analyser.getByteFrequencyData(frequencyBuffer);
+        // Log every 60 frames (~1 second) to prove loop is running
+        if (loopCount % 60 === 0) {
+          console.log(`[VAD] Loop active: ${loopCount} iterations, RAF ID:`, monitorRafRef.current);
+        }
+
+        if (!analyserRef.current) {
+          console.error('[VAD] ❌ analyserRef became null at iteration', loopCount);
+          monitorRafRef.current = null;
+          return;
+        }
+
+        // Keep AudioContext alive - resume if suspended
+        if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+          console.warn('[VAD] AudioContext suspended during monitoring, resuming...');
+          audioContextRef.current.resume().catch((error) => {
+            console.error('[VAD] Failed to resume AudioContext:', error);
+          });
+        }
+
+        analyser.getFloatTimeDomainData(timeBuffer);
+        analyser.getByteFrequencyData(frequencyBuffer);
 
       let sumSquares = 0;
       for (let i = 0; i < timeBuffer.length; i += 1) {
@@ -234,6 +287,32 @@ export function useAudioRecorder({
       }
       const rms = Math.sqrt(sumSquares / timeBuffer.length);
       const now = performance.now();
+
+      // Periodic health check (every 5 seconds)
+      if (now - lastHealthCheck > 5000) {
+        lastHealthCheck = now;
+        console.log('[VAD] Health check:', {
+          audioContextState: audioContextRef.current?.state,
+          analyserExists: !!analyserRef.current,
+          streamActive: streamRef.current?.active,
+          isRecording: recorderRef.current?.state === 'recording',
+          monitoringActive: monitorRafRef.current !== null,
+          rms: rms.toFixed(4),
+        });
+      }
+
+      // Debug: Check if we're getting actual audio data
+      if (recorderRef.current?.state === 'recording' && rms === 0 && now - recordingStartedAtRef.current > 1000) {
+        const sampleSum = timeBuffer.reduce((sum, val) => sum + Math.abs(val), 0);
+        if (sampleSum === 0) {
+          console.error('[VAD] No audio data detected! AudioContext:', {
+            state: audioContextRef.current?.state,
+            sampleRate: analyser.context.sampleRate,
+            streamActive: streamRef.current?.active,
+            streamTracks: streamRef.current?.getAudioTracks().map(t => ({ id: t.id, enabled: t.enabled, muted: t.muted, readyState: t.readyState }))
+          });
+        }
+      }
 
       // Calculate spectral energy in speech frequency range (300-3400Hz)
       const nyquist = analyser.context.sampleRate / 2;
@@ -408,6 +487,10 @@ export function useAudioRecorder({
           stop('max_duration');
         }
       }
+      } catch (error) {
+        console.error('[VAD] Error in detect loop:', error);
+        // Don't let the loop die - continue monitoring
+      }
 
       monitorRafRef.current = requestAnimationFrame(detect);
     };
@@ -417,6 +500,7 @@ export function useAudioRecorder({
   }, [eqBands, enableVAD, maxRecordingMs, minRecordingMs, onLevels, silenceDurationMs, stop, stopMonitor]);
 
   const start = useCallback(async () => {
+    console.log('[useAudioRecorder.start] 🎤 start() called');
     setRecorderError(null);
 
     try {
@@ -430,9 +514,15 @@ export function useAudioRecorder({
       }
 
       if (!streamRef.current) {
+        console.log('[useAudioRecorder.start] Requesting microphone access...');
         try {
           streamRef.current = await navigator.mediaDevices.getUserMedia({
             audio: { echoCancellation: true }
+          });
+          console.log('[useAudioRecorder.start] ✅ Got new MediaStream:', {
+            id: streamRef.current.id,
+            active: streamRef.current.active,
+            tracks: streamRef.current.getAudioTracks().length
           });
         } catch (error) {
           if ((error as DOMException).name === 'NotAllowedError') {
@@ -440,9 +530,22 @@ export function useAudioRecorder({
           }
           throw new Error('Unable to access microphone. Check device settings.');
         }
+      } else {
+        console.log('[useAudioRecorder.start] Reusing existing stream');
       }
 
-      await initializeAnalyser(streamRef.current);
+      // Only initialize analyser if we don't have one or if AudioContext is closed
+      if (!analyserRef.current || !audioContextRef.current || audioContextRef.current.state === 'closed') {
+        console.log('[Recorder] Initializing new analyser');
+        await initializeAnalyser(streamRef.current);
+      } else {
+        // Just ensure AudioContext is running
+        console.log('[Recorder] Reusing existing analyser, ensuring AudioContext is running');
+        if (audioContextRef.current.state !== 'running') {
+          await audioContextRef.current.resume();
+          console.log('[Recorder] Resumed AudioContext, state:', audioContextRef.current.state);
+        }
+      }
 
       // Only create recorder once and reuse it (like Cygnus)
       if (!recorderRef.current) {
@@ -522,14 +625,22 @@ export function useAudioRecorder({
       console.log('[Recorder] Starting recording:', {
         state: recorder.state,
         mimeType: recorder.mimeType,
-        stream: streamRef.current?.active
+        stream: streamRef.current?.active,
+        audioContext: audioContextRef.current?.state,
+        hasAnalyser: !!analyserRef.current,
+        monitoringActive: monitorRafRef.current !== null
       });
 
       recorder.start();
       setIsRecording(true);
+
+      // ALWAYS restart monitoring to ensure it's running
+      console.log('[Recorder] Starting/restarting monitoring loop');
       startMonitoringLevels();
+
+      console.log('[useAudioRecorder.start] ✅ Recording started successfully');
     } catch (error) {
-      console.error('Microphone error:', error);
+      console.error('[useAudioRecorder.start] ❌ Error during start:', error);
       setRecorderError(error instanceof Error ? error.message : 'Unable to start recording.');
       cleanup();
     }
