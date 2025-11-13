@@ -104,6 +104,11 @@ export function usePiperModel() {
 
       if (message.type === "custom_model_loaded") {
         setVoices(message.voices);
+        // Auto-select the newly added custom voice (last in the list)
+        if (message.voices.length > 0) {
+          const newVoice = message.voices[message.voices.length - 1];
+          setVoiceId(newVoice.id);
+        }
         setStatus((prev) => ({
           ...prev,
           state: "ready",

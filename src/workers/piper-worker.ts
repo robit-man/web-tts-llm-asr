@@ -148,16 +148,16 @@ ctx.addEventListener("message", async (event: MessageEvent<PiperRequest>) => {
       // Get the current max ID from voiceCache
       const maxId = voiceCache.length > 0 ? Math.max(...voiceCache.map(v => v.id)) : -1;
 
-      // Prefix custom voice names and assign new IDs
-      const prefixedCustomVoices = customVoices.map((voice, index) => ({
-        id: maxId + 1 + index,
-        name: `${data.modelName} - ${voice.name}`,
-        originalId: voice.id,
+      // Add only the first speaker from the custom model with the filename as the name
+      const newVoice = {
+        id: maxId + 1,
+        name: data.modelName,
+        originalId: customVoices[0].id,
         isCustom: true,
-      }));
+      };
 
       // Append to existing voiceCache
-      voiceCache = [...voiceCache, ...prefixedCustomVoices];
+      voiceCache = [...voiceCache, newVoice];
 
       ctx.postMessage({
         type: "custom_model_loaded",
