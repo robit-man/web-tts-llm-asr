@@ -58,8 +58,10 @@ const formatDuration = (totalSeconds: number) => {
   return `${minutes}:${seconds}`;
 };
 
-const BLANK_AUDIO_PATTERN = /^\s*\[BLANK_AUDIO\]\s*$/i;
-const BLANK_AUDIO_STRIPPER = /\[BLANK_AUDIO\]/gi;
+// Pattern to match if the entire transcription is just noise/silence
+const BLANK_AUDIO_PATTERN = /^\s*(\[BLANK_AUDIO\]|\[Inaudible\]|\[)\s*$/i;
+// Pattern to strip noise artifacts from transcription text
+const BLANK_AUDIO_STRIPPER = /\[BLANK_AUDIO\]|\[\s*Inaudible\s*\]|\[\s*$/gi;
 
 function App() {
   // Load saved model preferences from localStorage
@@ -97,6 +99,7 @@ function App() {
     voices,
     voiceId,
     setVoiceId,
+    loadCustomModel,
   } = piper;
 
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
@@ -125,6 +128,30 @@ function App() {
   const [segmentPending, setSegmentPending] = useState(false);
   const previousRecordingStateRef = useRef(false);
   const [capturedAudioBuffer, setCapturedAudioBuffer] = useState<AudioBuffer | null>(null);
+
+  // VAD timeout configuration with localStorage persistence
+  const [vadTimeoutMs, setVadTimeoutMs] = useState(() => {
+    const saved = localStorage.getItem("trifecta_vad_timeout_ms");
+    return saved ? parseInt(saved, 10) : 3000; // Default to 3 seconds (more relaxed)
+  });
+  const [currentSilenceMs, setCurrentSilenceMs] = useState(0);
+
+  // Custom Piper model state
+  const [showCustomModelForm, setShowCustomModelForm] = useState(false);
+  const [customOnnxUrl, setCustomOnnxUrl] = useState("");
+  const [customConfigUrl, setCustomConfigUrl] = useState("");
+
+  // Load saved custom model URLs from localStorage on mount
+  useEffect(() => {
+    const savedOnnx = localStorage.getItem("trifecta_custom_piper_onnx");
+    const savedConfig = localStorage.getItem("trifecta_custom_piper_config");
+    if (savedOnnx && savedConfig) {
+      setCustomOnnxUrl(savedOnnx);
+      setCustomConfigUrl(savedConfig);
+      // Auto-load the saved custom model
+      loadCustomModel(savedOnnx, savedConfig);
+    }
+  }, [loadCustomModel]);
 
   const statuses = useMemo(() => {
     return [whisperStatus, llmStatus, piperStatus].slice().sort(statusSort);
@@ -429,7 +456,7 @@ function App() {
     onLevels: setLevelSnapshot,
     // Remove onAudioChunk - we don't need streaming chunks for batch mode
     enableVAD: true,
-    silenceDurationMs: 900, // Faster response with improved VAD
+    silenceDurationMs: vadTimeoutMs,
   });
   const pipelineBusy = isProcessing || isTranscribing || isResponding || isSpeaking;
   const loopBusy = pipelineBusy || (!voiceSessionActive && recorder.isRecording);
@@ -509,6 +536,23 @@ function App() {
       recorder.stop();
     }
   }, [recorder, voiceSessionActive]);
+
+  const handleFetchCustomModel = useCallback(() => {
+    if (!customOnnxUrl || !customConfigUrl) {
+      setAlert("Please provide both .onnx and .onnx.json URLs");
+      return;
+    }
+
+    // Save to localStorage
+    localStorage.setItem("trifecta_custom_piper_onnx", customOnnxUrl);
+    localStorage.setItem("trifecta_custom_piper_config", customConfigUrl);
+
+    // Load the custom model
+    loadCustomModel(customOnnxUrl, customConfigUrl);
+
+    // Close the form
+    setShowCustomModelForm(false);
+  }, [customOnnxUrl, customConfigUrl, loadCustomModel, setAlert]);
 
   const forceVoiceSendoff = useCallback(() => {
     if (!voiceSessionActive) {
@@ -746,6 +790,26 @@ function App() {
     return () => clearTimeout(timeoutId);
   }, [voiceSessionActive, voiceSessionPhase, segmentPending, pipelineBusy, recorder.isRecording, ready, handleStartRecording]);
 
+  // Save VAD timeout to localStorage
+  useEffect(() => {
+    localStorage.setItem("trifecta_vad_timeout_ms", String(vadTimeoutMs));
+  }, [vadTimeoutMs]);
+
+  // Poll accumulated silence for countdown display
+  useEffect(() => {
+    if (!recorder.isRecording) {
+      setCurrentSilenceMs(0);
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      const accumulated = recorder.getAccumulatedSilence?.() ?? 0;
+      setCurrentSilenceMs(accumulated);
+    }, 50); // Update every 50ms for smooth countdown
+
+    return () => clearInterval(intervalId);
+  }, [recorder.isRecording, recorder]);
+
   useEffect(() => {
     return () => {
       if (recordingTimerRef.current !== null) {
@@ -864,30 +928,101 @@ function App() {
               </>
             )}
             {status.model === "piper" && (
-              <div className="model-control">
-                <label htmlFor="piper-voice">Voice</label>
-                <select
-                  id="piper-voice"
-                  value={String(voiceId)}
-                  onChange={(event) => setVoiceId(Number(event.target.value))}
-                  disabled={!ready || recorder.isRecording || loopBusy}
-                >
-                  {displayedVoices.length > 0 ? (
-                    displayedVoices.map((voice) => (
-                      <option key={voice.id} value={voice.id}>
-                        {voice.name}
+              <>
+                <div className="model-control">
+                  <label htmlFor="piper-voice">Voice</label>
+                  <select
+                    id="piper-voice"
+                    value={String(voiceId)}
+                    onChange={(event) => setVoiceId(Number(event.target.value))}
+                    disabled={!ready || recorder.isRecording || loopBusy}
+                  >
+                    {displayedVoices.length > 0 ? (
+                      displayedVoices.map((voice) => (
+                        <option key={voice.id} value={voice.id}>
+                          {voice.name}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="0" disabled>
+                        Loading voices…
                       </option>
-                    ))
-                  ) : (
-                    <option value="0" disabled>
-                      Loading voices…
-                    </option>
+                    )}
+                    {displayedVoices.every((voice) => voice.id !== voiceId) && (
+                      <option value={voiceId}>{selectedVoiceLabel}</option>
+                    )}
+                  </select>
+                </div>
+                <div className="model-control" style={{ borderTop: '1px solid rgba(148, 163, 184, 0.2)', paddingTop: '0.75rem', marginTop: '0.5rem' }}>
+                  <button
+                    onClick={() => setShowCustomModelForm(!showCustomModelForm)}
+                    className="voice-session__button voice-session__button--ghost"
+                    style={{ width: '100%', fontSize: '0.85rem' }}
+                  >
+                    {showCustomModelForm ? 'Hide' : 'Fetch Custom Model'}
+                  </button>
+                  {showCustomModelForm && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.75rem' }}>
+                      <div>
+                        <label htmlFor="custom-onnx-url" style={{ display: 'block', fontSize: '0.75rem', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.2em', color: 'rgba(226, 232, 240, 0.8)' }}>
+                          .onnx URL
+                        </label>
+                        <input
+                          id="custom-onnx-url"
+                          type="url"
+                          value={customOnnxUrl}
+                          onChange={(e) => setCustomOnnxUrl(e.target.value)}
+                          placeholder="https://example.com/model.onnx"
+                          style={{
+                            width: '100%',
+                            padding: '0.5rem 0.7rem',
+                            borderRadius: '0.75rem',
+                            border: '1px solid rgba(148, 163, 184, 0.3)',
+                            background: 'rgba(2, 6, 23, 0.6)',
+                            color: '#f8fafc',
+                            fontSize: '0.85rem',
+                            outline: 'none',
+                            fontFamily: '"Inter", system-ui, sans-serif'
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="custom-config-url" style={{ display: 'block', fontSize: '0.75rem', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.2em', color: 'rgba(226, 232, 240, 0.8)' }}>
+                          .onnx.json URL
+                        </label>
+                        <input
+                          id="custom-config-url"
+                          type="url"
+                          value={customConfigUrl}
+                          onChange={(e) => setCustomConfigUrl(e.target.value)}
+                          placeholder="https://example.com/model.onnx.json"
+                          style={{
+                            width: '100%',
+                            padding: '0.5rem 0.7rem',
+                            borderRadius: '0.75rem',
+                            border: '1px solid rgba(148, 163, 184, 0.3)',
+                            background: 'rgba(2, 6, 23, 0.6)',
+                            color: '#f8fafc',
+                            fontSize: '0.85rem',
+                            outline: 'none',
+                            fontFamily: '"Inter", system-ui, sans-serif'
+                          }}
+                        />
+                      </div>
+                      {customOnnxUrl && customConfigUrl && (
+                        <button
+                          onClick={handleFetchCustomModel}
+                          className="voice-session__button"
+                          style={{ width: '100%', fontSize: '0.85rem' }}
+                          disabled={piperStatus.state === 'loading'}
+                        >
+                          {piperStatus.state === 'loading' ? 'Loading...' : 'Fetch Model'}
+                        </button>
+                      )}
+                    </div>
                   )}
-                  {displayedVoices.every((voice) => voice.id !== voiceId) && (
-                    <option value={voiceId}>{selectedVoiceLabel}</option>
-                  )}
-                </select>
-              </div>
+                </div>
+              </>
             )}
           </ModelStatusCard>
         ))}
@@ -934,6 +1069,40 @@ function App() {
               <span className={`voice-session__pill voice-session__pill--${voiceSessionPhase}`}>
                 {sessionPhaseLabel}
               </span>
+            </div>
+            <div className="vad-timeout-controls">
+              <label htmlFor="vad-timeout" className="vad-timeout-controls__label-wrapper">
+                <span className="vad-timeout-controls__label">Silence Timeout (ms)</span>
+                <input
+                  id="vad-timeout"
+                  type="number"
+                  min="500"
+                  max="10000"
+                  step="100"
+                  value={vadTimeoutMs}
+                  onChange={(e) => setVadTimeoutMs(Math.max(500, Math.min(10000, parseInt(e.target.value) || 3000)))}
+                  className="vad-timeout-controls__input"
+                />
+              </label>
+              {recorder.isRecording && (
+                <div className="vad-timeout-controls__countdown">
+                  <div className="vad-timeout-controls__progress-wrapper">
+                    <div
+                      className={`vad-timeout-controls__progress-bar ${
+                        currentSilenceMs >= vadTimeoutMs * 0.8
+                          ? 'vad-timeout-controls__progress-bar--warning'
+                          : 'vad-timeout-controls__progress-bar--normal'
+                      }`}
+                      style={{ width: `${Math.min(100, (currentSilenceMs / vadTimeoutMs) * 100)}%` }}
+                    />
+                  </div>
+                  <span className={`vad-timeout-controls__time ${
+                    currentSilenceMs >= vadTimeoutMs * 0.8 ? 'vad-timeout-controls__time--warning' : ''
+                  }`}>
+                    {Math.max(0, vadTimeoutMs - currentSilenceMs)}ms
+                  </span>
+                </div>
+              )}
             </div>
             <div className="voice-session__visual-row">
               <AudioVisualizer

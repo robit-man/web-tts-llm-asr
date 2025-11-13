@@ -4,7 +4,8 @@ import { PiperTTS, RawAudio, TextSplitterStream } from "../lib/piper";
 
 type PiperRequest =
   | { type: "init" }
-  | { type: "speak"; id: number; text: string; voice?: number; speed?: number };
+  | { type: "speak"; id: number; text: string; voice?: number; speed?: number }
+  | { type: "load_custom_model"; onnxUrl: string; configUrl: string };
 
 const ctx: DedicatedWorkerGlobalScope = self as DedicatedWorkerGlobalScope;
 
@@ -125,6 +126,35 @@ ctx.addEventListener("message", async (event: MessageEvent<PiperRequest>) => {
 
   if (!tts) {
     await ensureModel();
+  }
+
+  if (data.type === "load_custom_model") {
+    try {
+      isLoading = true;
+      ctx.postMessage({
+        type: "status",
+        model: "piper",
+        state: "loading",
+        message: "Loading custom model...",
+      });
+
+      tts = await PiperTTS.from_pretrained(data.onnxUrl, data.configUrl);
+      voiceCache = tts.getSpeakers();
+
+      ctx.postMessage({
+        type: "custom_model_loaded",
+        voices: voiceCache,
+      });
+    } catch (error) {
+      ctx.postMessage({
+        type: "error",
+        model: "piper",
+        message: (error as Error).message ?? "Unable to load custom model",
+      });
+    } finally {
+      isLoading = false;
+    }
+    return;
   }
 
   if (!tts) {

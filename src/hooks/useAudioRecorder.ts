@@ -661,5 +661,7 @@ export function useAudioRecorder({
     start,
     stop,
     recorderError,
+    getAccumulatedSilence: () => accumulatedSilenceRef.current,
+    isSpeechActive: () => speechActiveRef.current,
   };
 }

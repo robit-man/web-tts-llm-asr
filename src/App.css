@@ -70,7 +70,7 @@ body {
 
 .ingress-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 1rem;
 }
 
@@ -566,6 +566,93 @@ body {
   color: rgba(148, 163, 184, 0.85);
 }
 
+.vad-timeout-controls {
+  padding: 0.9rem 1.25rem;
+  border-radius: 1.25rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.6);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.vad-timeout-controls__label-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  white-space: nowrap;
+}
+
+.vad-timeout-controls__label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  color: rgba(226, 232, 240, 0.8);
+  margin: 0;
+}
+
+.vad-timeout-controls__input {
+  border-radius: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(2, 6, 23, 0.6);
+  color: #f8fafc;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.9rem;
+  outline: none;
+  width: 85px;
+  font-family: "Inter", system-ui, sans-serif;
+}
+
+.vad-timeout-controls__input:focus {
+  border-color: rgba(148, 163, 184, 0.5);
+  background: rgba(2, 6, 23, 0.8);
+}
+
+.vad-timeout-controls__countdown {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.vad-timeout-controls__progress-wrapper {
+  flex: 1;
+  height: 6px;
+  background: rgba(2, 6, 23, 0.8);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.vad-timeout-controls__progress-bar {
+  height: 100%;
+  transition: width 0.05s linear, background-color 0.2s ease;
+  border-radius: 999px;
+}
+
+.vad-timeout-controls__progress-bar--normal {
+  background: linear-gradient(90deg, #10b981, #22c55e);
+}
+
+.vad-timeout-controls__progress-bar--warning {
+  background: linear-gradient(90deg, #fb7185, #f97316);
+}
+
+.vad-timeout-controls__time {
+  min-width: 70px;
+  text-align: right;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgba(226, 232, 240, 0.9);
+}
+
+.vad-timeout-controls__time--warning {
+  color: #fb7185;
+}
+
 .app__footer {
   font-size: 0.85rem;
   color: rgba(148, 163, 184, 0.8);
@@ -579,10 +666,6 @@ body {
     flex-direction: column;
   }
 
-  .ingress-row {
-    grid-template-columns: 1fr;
-  }
-
   .recorder-button {
     width: 100%;
   }
@@ -593,5 +676,19 @@ body {
 
   .voice-session__buttons {
     flex-direction: column;
+  }
+
+  .vad-timeout-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .vad-timeout-controls__label-wrapper {
+    justify-content: space-between;
+  }
+
+  .vad-timeout-controls__countdown {
+    width: 100%;
   }
 }

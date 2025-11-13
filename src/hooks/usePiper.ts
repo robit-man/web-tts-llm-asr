@@ -19,7 +19,17 @@ type PiperWorkerMessage =
     id?: number;
     model: "piper";
     message: string;
+  }
+  | {
+    type: "custom_model_loaded";
+    voices: { id: number; name: string }[];
   };
+
+export interface CustomPiperModel {
+  name: string;
+  onnxUrl: string;
+  configUrl: string;
+}
 
 export function usePiperModel() {
   const [status, setStatus] = useState<ModelStatus>({
@@ -91,6 +101,15 @@ export function usePiperModel() {
           }));
         }
       }
+
+      if (message.type === "custom_model_loaded") {
+        setVoices(message.voices);
+        setStatus((prev) => ({
+          ...prev,
+          state: "ready",
+          message: "Custom model loaded",
+        }));
+      }
     };
 
     worker.addEventListener("message", handleMessage);
@@ -128,6 +147,25 @@ export function usePiperModel() {
     [voiceId],
   );
 
+  const loadCustomModel = useCallback(
+    (onnxUrl: string, configUrl: string) => {
+      if (!workerRef.current) {
+        throw new Error("Piper worker not ready");
+      }
+      setStatus((prev) => ({
+        ...prev,
+        state: "loading",
+        message: "Loading custom model...",
+      }));
+      workerRef.current.postMessage({
+        type: "load_custom_model",
+        onnxUrl,
+        configUrl,
+      });
+    },
+    [],
+  );
+
   return useMemo(
     () => ({
       status,
@@ -136,7 +174,8 @@ export function usePiperModel() {
       voices,
       voiceId,
       setVoiceId,
+      loadCustomModel,
     }),
-    [isSpeaking, speak, status, voiceId, voices],
+    [isSpeaking, loadCustomModel, speak, status, voiceId, voices],
   );
 }
