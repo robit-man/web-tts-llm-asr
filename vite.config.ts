@@ -69,6 +69,41 @@ export default defineConfig({
           res.setHeader("ETag", '"model-v1"');
           next();
         });
+
+        // CORS proxy for fetching external models
+        server.middlewares.use("/cors-proxy", async (req, res) => {
+          const url = new URL(req.url || "", `http://${req.headers.host}`);
+          const targetUrl = url.searchParams.get("url");
+
+          if (!targetUrl) {
+            res.statusCode = 400;
+            res.end("Missing url parameter");
+            return;
+          }
+
+          try {
+            const response = await fetch(targetUrl);
+
+            // Set CORS headers
+            res.setHeader("Access-Control-Allow-Origin", "*");
+            res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+            res.setHeader("Access-Control-Allow-Headers", "*");
+
+            // Copy content type from original response
+            const contentType = response.headers.get("content-type");
+            if (contentType) {
+              res.setHeader("Content-Type", contentType);
+            }
+
+            // Stream the response
+            const buffer = await response.arrayBuffer();
+            res.end(Buffer.from(buffer));
+          } catch (error) {
+            console.error("CORS proxy error:", error);
+            res.statusCode = 500;
+            res.end(`Error fetching resource: ${(error as Error).message}`);
+          }
+        });
       },
     },
   ],

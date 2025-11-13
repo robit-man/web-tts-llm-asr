@@ -148,8 +148,10 @@ function App() {
     if (savedOnnx && savedConfig) {
       setCustomOnnxUrl(savedOnnx);
       setCustomConfigUrl(savedConfig);
-      // Auto-load the saved custom model
-      loadCustomModel(savedOnnx, savedConfig);
+      // Auto-load the saved custom model through CORS proxy
+      const proxiedOnnxUrl = `/cors-proxy?url=${encodeURIComponent(savedOnnx)}`;
+      const proxiedConfigUrl = `/cors-proxy?url=${encodeURIComponent(savedConfig)}`;
+      loadCustomModel(proxiedOnnxUrl, proxiedConfigUrl);
     }
   }, [loadCustomModel]);
 
@@ -547,8 +549,12 @@ function App() {
     localStorage.setItem("trifecta_custom_piper_onnx", customOnnxUrl);
     localStorage.setItem("trifecta_custom_piper_config", customConfigUrl);
 
-    // Load the custom model
-    loadCustomModel(customOnnxUrl, customConfigUrl);
+    // Use CORS proxy for external URLs
+    const proxiedOnnxUrl = `/cors-proxy?url=${encodeURIComponent(customOnnxUrl)}`;
+    const proxiedConfigUrl = `/cors-proxy?url=${encodeURIComponent(customConfigUrl)}`;
+
+    // Load the custom model through proxy
+    loadCustomModel(proxiedOnnxUrl, proxiedConfigUrl);
 
     // Close the form
     setShowCustomModelForm(false);
