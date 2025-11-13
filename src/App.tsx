@@ -140,24 +140,32 @@ function App() {
   const [showCustomModelForm, setShowCustomModelForm] = useState(false);
   const [customOnnxUrl, setCustomOnnxUrl] = useState("");
   const [customConfigUrl, setCustomConfigUrl] = useState("");
+  const customModelLoadedRef = useRef(false);
 
-  // Load saved custom model URLs from localStorage on mount
+  // Load saved custom model URLs from localStorage and populate inputs
   useEffect(() => {
     const savedOnnx = localStorage.getItem("trifecta_custom_piper_onnx");
     const savedConfig = localStorage.getItem("trifecta_custom_piper_config");
     if (savedOnnx && savedConfig) {
       setCustomOnnxUrl(savedOnnx);
       setCustomConfigUrl(savedConfig);
+    }
+  }, []);
+
+  // Auto-load custom model when Piper becomes ready (only once)
+  useEffect(() => {
+    if (piperStatus.state === "ready" && !customModelLoadedRef.current && customOnnxUrl && customConfigUrl) {
+      customModelLoadedRef.current = true;
       // Extract model name from onnx URL (filename without .onnx extension)
-      const urlParts = savedOnnx.split('/');
+      const urlParts = customOnnxUrl.split('/');
       const filename = urlParts[urlParts.length - 1];
       const modelName = filename.replace(/\.onnx$/, '');
       // Auto-load the saved custom model through CORS proxy
-      const proxiedOnnxUrl = `/cors-proxy?url=${encodeURIComponent(savedOnnx)}`;
-      const proxiedConfigUrl = `/cors-proxy?url=${encodeURIComponent(savedConfig)}`;
+      const proxiedOnnxUrl = `/cors-proxy?url=${encodeURIComponent(customOnnxUrl)}`;
+      const proxiedConfigUrl = `/cors-proxy?url=${encodeURIComponent(customConfigUrl)}`;
       loadCustomModel(proxiedOnnxUrl, proxiedConfigUrl, modelName);
     }
-  }, [loadCustomModel]);
+  }, [piperStatus.state, customOnnxUrl, customConfigUrl, loadCustomModel]);
 
   const statuses = useMemo(() => {
     return [whisperStatus, llmStatus, piperStatus].slice().sort(statusSort);
