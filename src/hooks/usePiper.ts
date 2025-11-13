@@ -148,7 +148,7 @@ export function usePiperModel() {
   );
 
   const loadCustomModel = useCallback(
-    (onnxUrl: string, configUrl: string) => {
+    (onnxUrl: string, configUrl: string, modelName: string) => {
       if (!workerRef.current) {
         throw new Error("Piper worker not ready");
       }
@@ -161,6 +161,7 @@ export function usePiperModel() {
         type: "load_custom_model",
         onnxUrl,
         configUrl,
+        modelName,
       });
     },
     [],

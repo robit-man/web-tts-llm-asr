@@ -5,13 +5,15 @@ import { PiperTTS, RawAudio, TextSplitterStream } from "../lib/piper";
 type PiperRequest =
   | { type: "init" }
   | { type: "speak"; id: number; text: string; voice?: number; speed?: number }
-  | { type: "load_custom_model"; onnxUrl: string; configUrl: string };
+  | { type: "load_custom_model"; onnxUrl: string; configUrl: string; modelName: string };
 
 const ctx: DedicatedWorkerGlobalScope = self as DedicatedWorkerGlobalScope;
 
 let tts: PiperTTS | null = null;
 let isLoading = false;
-let voiceCache: { id: number; name: string; originalId?: string }[] = [];
+let voiceCache: { id: number; name: string; originalId?: number; isCustom?: boolean }[] = [];
+let defaultVoices: { id: number; name: string }[] = [];
+let customTTS: PiperTTS | null = null;
 
 async function ensureModel() {
   if (tts || isLoading) {
@@ -30,7 +32,8 @@ async function ensureModel() {
     const modelPath = `${import.meta.env.BASE_URL}tts-model/en_US-libritts_r-medium.onnx`;
     const configPath = `${import.meta.env.BASE_URL}tts-model/en_US-libritts_r-medium.onnx.json`;
     tts = await PiperTTS.from_pretrained(modelPath, configPath);
-    voiceCache = tts.getSpeakers();
+    defaultVoices = tts.getSpeakers();
+    voiceCache = [...defaultVoices];
     ctx.postMessage({
       type: "status",
       model: "piper",
@@ -138,8 +141,23 @@ ctx.addEventListener("message", async (event: MessageEvent<PiperRequest>) => {
         message: "Loading custom model...",
       });
 
-      tts = await PiperTTS.from_pretrained(data.onnxUrl, data.configUrl);
-      voiceCache = tts.getSpeakers();
+      // Load custom model separately
+      customTTS = await PiperTTS.from_pretrained(data.onnxUrl, data.configUrl);
+      const customVoices = customTTS.getSpeakers();
+
+      // Get the current max ID from voiceCache
+      const maxId = voiceCache.length > 0 ? Math.max(...voiceCache.map(v => v.id)) : -1;
+
+      // Prefix custom voice names and assign new IDs
+      const prefixedCustomVoices = customVoices.map((voice, index) => ({
+        id: maxId + 1 + index,
+        name: `${data.modelName} - ${voice.name}`,
+        originalId: voice.id,
+        isCustom: true,
+      }));
+
+      // Append to existing voiceCache
+      voiceCache = [...voiceCache, ...prefixedCustomVoices];
 
       ctx.postMessage({
         type: "custom_model_loaded",
@@ -175,8 +193,22 @@ ctx.addEventListener("message", async (event: MessageEvent<PiperRequest>) => {
 
     const chunks: RawAudio[] = [];
     try {
-      const stream = tts.stream(streamer, {
-        speakerId: voice,
+      // Find the voice in cache to determine if it's custom
+      const voiceInfo = voiceCache.find(v => v.id === voice);
+      const isCustomVoice = voiceInfo?.isCustom || false;
+      const speakerId = isCustomVoice && voiceInfo?.originalId !== undefined
+        ? voiceInfo.originalId
+        : voice;
+
+      // Use the appropriate TTS model
+      const activeTTS = isCustomVoice && customTTS ? customTTS : tts;
+
+      if (!activeTTS) {
+        throw new Error("TTS model not ready");
+      }
+
+      const stream = activeTTS.stream(streamer, {
+        speakerId: speakerId,
         lengthScale: 1 / Math.max(speed, 0.5),
       });
 

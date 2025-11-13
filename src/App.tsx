@@ -148,10 +148,14 @@ function App() {
     if (savedOnnx && savedConfig) {
       setCustomOnnxUrl(savedOnnx);
       setCustomConfigUrl(savedConfig);
+      // Extract model name from onnx URL (filename without .onnx extension)
+      const urlParts = savedOnnx.split('/');
+      const filename = urlParts[urlParts.length - 1];
+      const modelName = filename.replace(/\.onnx$/, '');
       // Auto-load the saved custom model through CORS proxy
       const proxiedOnnxUrl = `/cors-proxy?url=${encodeURIComponent(savedOnnx)}`;
       const proxiedConfigUrl = `/cors-proxy?url=${encodeURIComponent(savedConfig)}`;
-      loadCustomModel(proxiedOnnxUrl, proxiedConfigUrl);
+      loadCustomModel(proxiedOnnxUrl, proxiedConfigUrl, modelName);
     }
   }, [loadCustomModel]);
 
@@ -549,12 +553,17 @@ function App() {
     localStorage.setItem("trifecta_custom_piper_onnx", customOnnxUrl);
     localStorage.setItem("trifecta_custom_piper_config", customConfigUrl);
 
+    // Extract model name from onnx URL (filename without .onnx extension)
+    const urlParts = customOnnxUrl.split('/');
+    const filename = urlParts[urlParts.length - 1];
+    const modelName = filename.replace(/\.onnx$/, '');
+
     // Use CORS proxy for external URLs
     const proxiedOnnxUrl = `/cors-proxy?url=${encodeURIComponent(customOnnxUrl)}`;
     const proxiedConfigUrl = `/cors-proxy?url=${encodeURIComponent(customConfigUrl)}`;
 
     // Load the custom model through proxy
-    loadCustomModel(proxiedOnnxUrl, proxiedConfigUrl);
+    loadCustomModel(proxiedOnnxUrl, proxiedConfigUrl, modelName);
 
     // Close the form
     setShowCustomModelForm(false);
