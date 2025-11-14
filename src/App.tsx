@@ -91,6 +91,13 @@ function App() {
     partialResponse,
     model: llmModel,
     setModel: setLlmModel,
+    webgpuSupported,
+    gpuPowerPreference,
+    changeGPUPreference,
+    availableGPUs,
+    currentGPU,
+    detectGPUs,
+    retryWebGPUInit,
   } = llm;
   const {
     status: piperStatus,
@@ -948,6 +955,71 @@ function App() {
                     )}
                   </select>
                 </div>
+                {!llm.useOllama && (
+                  <>
+                    <div className="model-control" style={{ borderTop: '1px solid rgba(148, 163, 184, 0.2)', paddingTop: '0.75rem', marginTop: '0.5rem' }}>
+                      <label htmlFor="gpu-preference">GPU Preference</label>
+                      <select
+                        id="gpu-preference"
+                        value={gpuPowerPreference}
+                        onChange={(event) => changeGPUPreference(event.target.value as GPUPowerPreference)}
+                        disabled={recorder.isRecording || loopBusy || !webgpuSupported}
+                      >
+                        <option value="high-performance">High Performance (Discrete GPU)</option>
+                        <option value="low-power">Low Power (Integrated GPU)</option>
+                      </select>
+                    </div>
+                    {currentGPU && (
+                      <div className="model-control">
+                        <label style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.2em', color: 'rgba(226, 232, 240, 0.6)' }}>
+                          Active GPU
+                        </label>
+                        <div style={{ fontSize: '0.85rem', padding: '0.5rem', background: 'rgba(0, 0, 0, 0.2)', borderRadius: '0.5rem', marginTop: '0.25rem' }}>
+                          <div style={{ fontWeight: 500 }}>{currentGPU.description}</div>
+                          <div style={{ fontSize: '0.75rem', color: 'rgba(226, 232, 240, 0.7)', marginTop: '0.25rem' }}>
+                            Vendor: {currentGPU.vendor} | Arch: {currentGPU.architecture}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {availableGPUs.length > 0 && (
+                      <div className="model-control">
+                        <label style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.2em', color: 'rgba(226, 232, 240, 0.6)' }}>
+                          Detected GPUs ({availableGPUs.length})
+                        </label>
+                        <div style={{ fontSize: '0.8rem', padding: '0.5rem', background: 'rgba(0, 0, 0, 0.15)', borderRadius: '0.5rem', marginTop: '0.25rem' }}>
+                          {availableGPUs.map((gpu, idx) => (
+                            <div key={idx} style={{ marginBottom: idx < availableGPUs.length - 1 ? '0.5rem' : 0, paddingBottom: idx < availableGPUs.length - 1 ? '0.5rem' : 0, borderBottom: idx < availableGPUs.length - 1 ? '1px solid rgba(148, 163, 184, 0.1)' : 'none' }}>
+                              <div style={{ fontWeight: 500, fontSize: '0.85rem' }}>{gpu.description}</div>
+                              <div style={{ fontSize: '0.7rem', color: 'rgba(226, 232, 240, 0.6)', marginTop: '0.15rem' }}>
+                                {gpu.powerPreference === "high-performance" ? "High Performance" : "Low Power"} | {gpu.vendor}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {!webgpuSupported && (
+                      <div className="model-control">
+                        <div style={{ fontSize: '0.85rem', padding: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '0.5rem', color: 'rgba(252, 165, 165, 1)' }}>
+                          WebGPU not supported in this browser
+                        </div>
+                      </div>
+                    )}
+                    {llmStatus.state === "error" && webgpuSupported && (
+                      <div className="model-control">
+                        <button
+                          onClick={retryWebGPUInit}
+                          className="voice-session__button"
+                          style={{ width: '100%', fontSize: '0.85rem' }}
+                          disabled={recorder.isRecording || loopBusy}
+                        >
+                          Retry WebGPU Init
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
               </>
             )}
             {status.model === "piper" && (

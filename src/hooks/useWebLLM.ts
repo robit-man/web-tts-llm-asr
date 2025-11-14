@@ -105,6 +105,14 @@ async function fetchOllamaModels(): Promise<OllamaModel[]> {
   }
 }
 
+export interface GPUAdapterInfo {
+  vendor: string;
+  architecture: string;
+  device: string;
+  description: string;
+  powerPreference: GPUPowerPreference;
+}
+
 export function useWebLLM(initialModel = DEFAULT_MODEL) {
   const [status, setStatus] = useState<ModelStatus>({
     model: "webllm",
@@ -122,6 +130,15 @@ export function useWebLLM(initialModel = DEFAULT_MODEL) {
     return saved === "true";
   });
 
+  // WebGPU state
+  const [gpuPowerPreference, setGpuPowerPreference] = useState<GPUPowerPreference>(() => {
+    const saved = localStorage.getItem("trifecta_gpu_power_preference");
+    return (saved as GPUPowerPreference) || "high-performance";
+  });
+  const [availableGPUs, setAvailableGPUs] = useState<GPUAdapterInfo[]>([]);
+  const [currentGPU, setCurrentGPU] = useState<GPUAdapterInfo | null>(null);
+  const [webgpuSupported, setWebgpuSupported] = useState<boolean>(true);
+
   const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
   const engineRef = useRef<webllm.MLCEngineInterface | null>(null);
   const ollamaFetchedRef = useRef(false);
@@ -130,6 +147,47 @@ export function useWebLLM(initialModel = DEFAULT_MODEL) {
   useEffect(() => {
     localStorage.setItem("trifecta_use_ollama", String(useOllama));
   }, [useOllama]);
+
+  // Save GPU power preference to localStorage
+  useEffect(() => {
+    localStorage.setItem("trifecta_gpu_power_preference", gpuPowerPreference);
+  }, [gpuPowerPreference]);
+
+  // Detect available GPUs
+  const detectGPUs = useCallback(async () => {
+    if (!navigator.gpu) {
+      setWebgpuSupported(false);
+      return [];
+    }
+
+    const detectedGPUs: GPUAdapterInfo[] = [];
+    const preferences: GPUPowerPreference[] = ["high-performance", "low-power"];
+
+    for (const pref of preferences) {
+      try {
+        const adapter = await navigator.gpu.requestAdapter({ powerPreference: pref });
+        if (adapter) {
+          const info = await (adapter as any).requestAdapterInfo?.();
+          const gpuInfo: GPUAdapterInfo = {
+            vendor: info?.vendor || "Unknown",
+            architecture: info?.architecture || "Unknown",
+            device: info?.device || "Unknown",
+            description: info?.description || `GPU (${pref})`,
+            powerPreference: pref,
+          };
+          // Avoid duplicates by checking description
+          if (!detectedGPUs.some(gpu => gpu.description === gpuInfo.description)) {
+            detectedGPUs.push(gpuInfo);
+          }
+        }
+      } catch (error) {
+        console.warn(`[WebGPU] Failed to detect ${pref} adapter:`, error);
+      }
+    }
+
+    setAvailableGPUs(detectedGPUs);
+    return detectedGPUs;
+  }, []);
 
   // Fetch Ollama models when Ollama mode is enabled
   useEffect(() => {
@@ -185,25 +243,55 @@ export function useWebLLM(initialModel = DEFAULT_MODEL) {
       try {
         // Check WebGPU support before attempting to load
         if (!navigator.gpu) {
+          setWebgpuSupported(false);
           throw new Error(
             "WebGPU is not supported in this browser. Please use Chrome/Edge 113+ with WebGPU enabled."
           );
         }
 
-        const adapter = await navigator.gpu.requestAdapter();
+        // Detect available GPUs
+        setStatus({
+          model: "webllm",
+          label: "WebLLM Reasoner",
+          state: "loading",
+          message: "Detecting GPUs...",
+        });
+
+        const gpus = await detectGPUs();
+        console.log("[WebLLM] Detected GPUs:", gpus);
+
+        // Request adapter with selected power preference
+        const adapter = await navigator.gpu.requestAdapter({
+          powerPreference: gpuPowerPreference
+        });
+
         if (!adapter) {
           throw new Error(
             "WebGPU adapter not found. Ensure WebGPU flags are enabled in chrome://flags"
           );
         }
 
-        // Log GPU info for diagnostics
+        // Get and store GPU info
         const adapterInfo = await (adapter as any).requestAdapterInfo?.();
-        console.log("[WebLLM] WebGPU Adapter Info:", {
-          vendor: adapterInfo?.vendor || "unknown",
-          architecture: adapterInfo?.architecture || "unknown",
-          device: adapterInfo?.device || "unknown",
-          description: adapterInfo?.description || "unknown",
+        const gpuInfo: GPUAdapterInfo = {
+          vendor: adapterInfo?.vendor || "Unknown",
+          architecture: adapterInfo?.architecture || "Unknown",
+          device: adapterInfo?.device || "Unknown",
+          description: adapterInfo?.description || "Unknown GPU",
+          powerPreference: gpuPowerPreference,
+        };
+        setCurrentGPU(gpuInfo);
+
+        console.log("[WebLLM] Using WebGPU Adapter:", {
+          ...gpuInfo,
+          powerPreference: gpuPowerPreference,
+        });
+
+        setStatus({
+          model: "webllm",
+          label: "WebLLM Reasoner",
+          state: "loading",
+          message: `Loading model on ${gpuInfo.description}...`,
         });
 
         const engine = await obtainEngine(modelId, (report) => {
@@ -219,15 +307,14 @@ export function useWebLLM(initialModel = DEFAULT_MODEL) {
 
         if (!cancelled) {
           engineRef.current = engine;
-          const deviceInfo = adapterInfo?.description || "GPU";
           setStatus({
             model: "webllm",
             label: "WebLLM Reasoner",
             state: "ready",
             message: `${modelId} ready`,
-            detail: `Using WebGPU on ${deviceInfo}`,
+            detail: `${gpuInfo.description} (${gpuPowerPreference})`,
           });
-          console.log(`[WebLLM] Model loaded successfully on ${deviceInfo}`);
+          console.log(`[WebLLM] Model loaded successfully on ${gpuInfo.description}`);
         }
       } catch (error) {
         if (!cancelled) {
@@ -238,9 +325,10 @@ export function useWebLLM(initialModel = DEFAULT_MODEL) {
             state: "error",
             message: errorMessage ?? "Unable to initialize WebLLM runtime",
             detail: errorMessage.includes("WebGPU")
-              ? "Check chrome://flags for WebGPU settings"
+              ? "Check chrome://flags for WebGPU settings or try different GPU"
               : undefined,
           });
+          setCurrentGPU(null);
         }
       }
     };
@@ -249,7 +337,7 @@ export function useWebLLM(initialModel = DEFAULT_MODEL) {
     return () => {
       cancelled = true;
     };
-  }, [modelId, useOllama]);
+  }, [modelId, useOllama, gpuPowerPreference, detectGPUs]);
 
   const generate = useCallback(
     async (messages: webllm.ChatCompletionMessageParam[]) => {
@@ -359,6 +447,28 @@ export function useWebLLM(initialModel = DEFAULT_MODEL) {
     }
   }, []);
 
+  const changeGPUPreference = useCallback((preference: GPUPowerPreference) => {
+    setGpuPowerPreference(preference);
+    // Clear engine to force reload
+    engineRef.current = null;
+    const store = getEngineStore();
+    store.engine = null;
+    store.modelId = null;
+    store.promise = null;
+  }, []);
+
+  const retryWebGPUInit = useCallback(() => {
+    if (useOllama) return;
+    // Clear engine to force reload
+    engineRef.current = null;
+    const store = getEngineStore();
+    store.engine = null;
+    store.modelId = null;
+    store.promise = null;
+    // Trigger reload by updating model (even if same)
+    setModelId((prev) => prev);
+  }, [useOllama]);
+
   const refreshOllamaModels = useCallback(async () => {
     if (!useOllama) return;
 
@@ -403,7 +513,33 @@ export function useWebLLM(initialModel = DEFAULT_MODEL) {
       toggleOllama,
       ollamaModels,
       refreshOllamaModels,
+      // WebGPU controls
+      webgpuSupported,
+      gpuPowerPreference,
+      changeGPUPreference,
+      availableGPUs,
+      currentGPU,
+      detectGPUs,
+      retryWebGPUInit,
     }),
-    [generate, isResponding, modelId, partialResponse, setModel, status, useOllama, toggleOllama, ollamaModels, refreshOllamaModels],
+    [
+      generate,
+      isResponding,
+      modelId,
+      partialResponse,
+      setModel,
+      status,
+      useOllama,
+      toggleOllama,
+      ollamaModels,
+      refreshOllamaModels,
+      webgpuSupported,
+      gpuPowerPreference,
+      changeGPUPreference,
+      availableGPUs,
+      currentGPU,
+      detectGPUs,
+      retryWebGPUInit,
+    ],
   );
 }
