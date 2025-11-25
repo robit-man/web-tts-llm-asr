@@ -347,6 +347,146 @@
       background-size: 16px;
       padding-right: 32px;
     }
+
+    .vad-panel {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 14px;
+      align-items: center;
+      background: #141820;
+      border: 1px solid #1f2937;
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+
+    .vad-rms {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .vad-pulse {
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(56, 189, 248, 0.9), rgba(14, 165, 233, 0.35));
+      opacity: 0.65;
+      transition: transform 120ms ease, opacity 120ms ease, box-shadow 200ms ease;
+    }
+
+    .vad-pulse.active {
+      opacity: 1;
+      box-shadow: 0 0 16px rgba(14, 165, 233, 0.6);
+    }
+
+    .vad-db {
+      font-size: 13px;
+      font-weight: 600;
+      color: #e5e7eb;
+    }
+
+    .vad-status {
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #94a3b8;
+    }
+
+    .vad-eq {
+      display: flex;
+      align-items: flex-end;
+      gap: 6px;
+      height: 90px;
+    }
+
+    .vad-eq-bar {
+      flex: 1;
+      height: 100%;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.2);
+      overflow: hidden;
+    }
+
+    .vad-eq-bar-fill {
+      width: 100%;
+      height: 20%;
+      border-radius: 999px;
+      background: linear-gradient(180deg, #38bdf8 0%, #0ea5e9 70%, #0ea5e900 100%);
+      transition: height 160ms ease;
+    }
+
+    .vad-timeout {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .vad-timeout label {
+      font-size: 12px;
+      color: #cbd5e1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .vad-timeout input[type="range"] {
+      flex: 1;
+      accent-color: #0ea5e9;
+      height: 6px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #1f2937 0%, #111827 100%);
+    }
+
+    .vad-countdown {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: #94a3b8;
+    }
+
+    .vad-progress {
+      flex: 1;
+      height: 6px;
+      background: #1f2937;
+      border-radius: 999px;
+      overflow: hidden;
+      border: 1px solid #0f172a;
+    }
+
+    .vad-progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #22c55e 0%, #eab308 70%, #ef4444 100%);
+      transition: width 120ms linear;
+    }
+
+    .waveform-card {
+      margin-bottom: 16px;
+      padding: 12px;
+      border: 1px solid #1f2937;
+      border-radius: 10px;
+      background: #0f172a;
+    }
+
+    .waveform-card canvas {
+      width: 100%;
+      height: auto;
+      display: block;
+      border-radius: 6px;
+      background: #0b1220;
+      border: 1px solid #1f2937;
+    }
+
+    .waveform-meta {
+      margin-top: 6px;
+      font-size: 12px;
+      color: #94a3b8;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
@@ -397,6 +537,33 @@
       <span>Recording...</span>
     </div>
 
+    <div class="vad-panel">
+      <div class="vad-rms">
+        <div class="vad-pulse" id="vad-pulse"></div>
+        <div class="vad-db" id="vad-db">-inf dB</div>
+        <div class="vad-status" id="vad-status-text">Listening</div>
+      </div>
+      <div class="vad-eq" id="vad-eq"></div>
+      <div class="vad-timeout">
+        <label>
+          Silence timeout
+          <span id="vad-timeout-label">900ms</span>
+        </label>
+        <input type="range" id="vad-timeout-slider" min="500" max="3000" step="50" value="900">
+        <div class="vad-countdown">
+          <div class="vad-progress">
+            <div class="vad-progress-fill" id="vad-progress-fill"></div>
+          </div>
+          <span id="vad-countdown">0ms</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="waveform-card">
+      <canvas id="waveform-canvas" width="900" height="160"></canvas>
+      <div class="waveform-meta" id="waveform-meta">No audio captured yet.</div>
+    </div>
+
     <div class="controls">
       <button class="btn-primary" id="record-btn" disabled>Start Recording</button>
       <button class="btn-success" id="speak-btn" disabled>Speak Response</button>
@@ -442,6 +609,23 @@
     } else {
       console.warn('ONNXRuntime env not available; skipping wasm path configuration');
     }
+
+    // Audio visualization and VAD tuning (mirrors src/hooks/useAudioRecorder)
+    const EQ_BANDS = 6;
+    const MIN_FREQUENCY = 120;
+    const MAX_FREQUENCY = 5200;
+    const EQ_DECAY = 0.6;
+    const EQ_THRESHOLD = 0.08;
+    let eqLevels = Array(EQ_BANDS).fill(6);
+    let lastEqUpdate = 0;
+
+    const VAD_TIMEOUT_KEY = 'trifecta_vad_timeout_ms';
+    let vadTimeoutMs = parseInt(localStorage.getItem(VAD_TIMEOUT_KEY) || '', 10);
+    if (Number.isNaN(vadTimeoutMs)) {
+      vadTimeoutMs = 900;
+    }
+    let currentSilenceMs = 0;
+    let capturedAudioBuffer = null;
 
     // ===== IndexedDB Model Cache =====
     class ModelCache {
@@ -718,7 +902,7 @@
     const VAD_CONFIG = {
       minRecordingMs: 450,
       maxRecordingMs: 15000,
-      silenceDurationMs: 900,
+      silenceDurationMs: vadTimeoutMs,
       energyAlpha: 0.3,
       speechMinHz: 300,
       speechMaxHz: 3400,
@@ -748,6 +932,143 @@
     const refreshModelsBtn = document.getElementById('refresh-models');
     const whisperModelSelect = document.getElementById('whisper-model');
     const ttsVoiceSelect = document.getElementById('tts-voice');
+    const vadPulse = document.getElementById('vad-pulse');
+    const vadDb = document.getElementById('vad-db');
+    const vadStatusText = document.getElementById('vad-status-text');
+    const vadEq = document.getElementById('vad-eq');
+    const vadTimeoutSlider = document.getElementById('vad-timeout-slider');
+    const vadTimeoutLabel = document.getElementById('vad-timeout-label');
+    const vadProgressFill = document.getElementById('vad-progress-fill');
+    const vadCountdown = document.getElementById('vad-countdown');
+    const waveformCanvas = document.getElementById('waveform-canvas');
+    const waveformMeta = document.getElementById('waveform-meta');
+
+    // Build EQ bars once
+    const eqBarFills = [];
+    if (vadEq) {
+      for (let i = 0; i < EQ_BANDS; i++) {
+        const bar = document.createElement('div');
+        bar.className = 'vad-eq-bar';
+        const fill = document.createElement('div');
+        fill.className = 'vad-eq-bar-fill';
+        bar.appendChild(fill);
+        vadEq.appendChild(bar);
+        eqBarFills.push(fill);
+      }
+    }
+
+    function formatDb(rms) {
+      if (!rms || rms <= 0) return '-inf dB';
+      return `${(20 * Math.log10(rms)).toFixed(1)} dB`;
+    }
+
+    function updateVADVisualizer(rms, eqLevelsSnapshot, isActive) {
+      if (!vadPulse || !vadDb || !vadStatusText) return;
+      const normalized = Math.min(1, rms / 0.05);
+      vadPulse.style.transform = `scale(${0.8 + normalized * 0.4})`;
+      vadPulse.classList.toggle('active', isActive);
+      vadDb.textContent = formatDb(rms);
+      vadStatusText.textContent = isActive ? 'Voice detected' : 'Listening';
+      eqLevelsSnapshot.forEach((level, index) => {
+        const fill = eqBarFills[index];
+        if (fill) {
+          fill.style.height = `${Math.min(100, level)}%`;
+        }
+      });
+    }
+
+    function updateSilenceUI(accumulatedMs) {
+      if (!vadProgressFill || !vadCountdown) return;
+      const percent = Math.min(100, (accumulatedMs / vadTimeoutMs) * 100);
+      vadProgressFill.style.width = `${percent}%`;
+      vadCountdown.textContent = `${Math.max(0, Math.round(vadTimeoutMs - accumulatedMs))}ms`;
+    }
+
+    function applyVadTimeout(valueMs) {
+      vadTimeoutMs = valueMs;
+      VAD_CONFIG.silenceDurationMs = vadTimeoutMs;
+      if (vadTimeoutSlider) vadTimeoutSlider.value = String(vadTimeoutMs);
+      if (vadTimeoutLabel) vadTimeoutLabel.textContent = `${vadTimeoutMs}ms`;
+      localStorage.setItem(VAD_TIMEOUT_KEY, String(vadTimeoutMs));
+      updateSilenceUI(currentSilenceMs);
+    }
+
+    applyVadTimeout(vadTimeoutMs);
+    if (vadTimeoutSlider) {
+      vadTimeoutSlider.addEventListener('input', (e) => {
+        const target = e.target;
+        const value = parseInt(target.value, 10);
+        if (!Number.isNaN(value)) {
+          applyVadTimeout(value);
+        }
+      });
+    }
+
+    function drawWaveform(audioBuffer) {
+      if (!waveformCanvas || !waveformMeta) return;
+      const ctx = waveformCanvas.getContext('2d');
+      if (!ctx) return;
+      const width = waveformCanvas.width;
+      const height = waveformCanvas.height;
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = '#0b1220';
+      ctx.fillRect(0, 0, width, height);
+
+      if (!audioBuffer) {
+        ctx.fillStyle = '#0ea5e9';
+        ctx.font = '14px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('No audio data', width / 2, height / 2);
+        waveformMeta.textContent = 'No audio captured yet.';
+        return;
+      }
+
+      const data = audioBuffer.getChannelData(0);
+      const step = Math.max(1, Math.ceil(data.length / width));
+      const amp = height / 2;
+
+      ctx.strokeStyle = '#0ea5e9';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 0; i < width; i++) {
+        let min = 1.0;
+        let max = -1.0;
+        for (let j = 0; j < step; j++) {
+          const datum = data[i * step + j] || 0;
+          min = Math.min(min, datum);
+          max = Math.max(max, datum);
+        }
+        ctx.moveTo(i, (1 + min) * amp);
+        ctx.lineTo(i, (1 + max) * amp);
+      }
+      ctx.stroke();
+
+      // Center line
+      ctx.strokeStyle = '#1f2937';
+      ctx.beginPath();
+      ctx.moveTo(0, height / 2);
+      ctx.lineTo(width, height / 2);
+      ctx.stroke();
+
+      // Info text
+      ctx.fillStyle = '#0ea5e9';
+      ctx.font = '12px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(
+        `Duration: ${audioBuffer.duration.toFixed(2)}s | Sample Rate: ${audioBuffer.sampleRate}Hz | Samples: ${data.length}`,
+        10,
+        18
+      );
+
+      let sumSquares = 0;
+      for (let i = 0; i < data.length; i++) {
+        sumSquares += data[i] * data[i];
+      }
+      const rms = Math.sqrt(sumSquares / data.length);
+      ctx.fillText(`RMS Level: ${(rms * 100).toFixed(2)}%`, 10, 36);
+
+      waveformMeta.textContent = 'Waveform preview of last capture.';
+    }
 
     // Fetch Ollama models
     async function fetchOllamaModels() {
@@ -1003,6 +1324,7 @@
         } else {
           // Adapt noise floor faster when not speaking
           backgroundNoise = backgroundNoise * 0.95 + smoothedEnergy * 0.05;
+          backgroundNoise = Math.min(backgroundNoise, 0.01);
         }
       }
 
@@ -1012,7 +1334,7 @@
       const isTrueSilence = smoothedEnergy < silenceThreshold && speechRatio < 0.15;
 
       if (speechActive &&
-          silenceAccumulated >= VAD_CONFIG.silenceDurationMs &&
+          silenceAccumulated >= vadTimeoutMs &&
           isTrueSilence &&
           recordingElapsed > VAD_CONFIG.minRecordingMs) {
         console.log('VAD: Auto-stopping on silence');
@@ -1026,6 +1348,44 @@
         stopRecording();
         return;
       }
+
+      // EQ/visualization updates (every ~90ms)
+      const isRecorderRecording = mediaRecorder && mediaRecorder.state === 'recording';
+      const isCurrentlyActive = isRecorderRecording && (speechActive || isSpeechLike);
+      const nowTs = performance.now();
+      if (nowTs - lastEqUpdate > 90) {
+        lastEqUpdate = nowTs;
+        const previousLevels = eqLevels.slice();
+        let peakNormalized = 0;
+        const nextLevels = Array.from({ length: EQ_BANDS }, (_, index) => {
+          const bandStartHz = MIN_FREQUENCY + ((MAX_FREQUENCY - MIN_FREQUENCY) / EQ_BANDS) * index;
+          const bandEndHz = MIN_FREQUENCY + ((MAX_FREQUENCY - MIN_FREQUENCY) / EQ_BANDS) * (index + 1);
+          const minIndex = Math.max(0, Math.floor((bandStartHz / nyquist) * bufferLength));
+          const maxIndex = Math.min(bufferLength - 1, Math.floor((bandEndHz / nyquist) * bufferLength));
+          let sum = 0;
+          let samples = 0;
+          for (let i = minIndex; i <= maxIndex; i++) {
+            const magnitude = frequencyBuffer[i];
+            if (Number.isFinite(magnitude)) {
+              sum += magnitude;
+              samples++;
+            }
+          }
+          const avgMagnitude = samples > 0 ? sum / samples : 0;
+          const normalized = Math.min(1, avgMagnitude / 255);
+          peakNormalized = Math.max(peakNormalized, normalized);
+          const targetHeight = isCurrentlyActive ? 18 + normalized * 90 : 6 + normalized * 28;
+          const previousHeight = previousLevels[index] ?? 6;
+          const smoothed = previousHeight * EQ_DECAY + targetHeight * (1 - EQ_DECAY);
+          return Math.max(6, smoothed);
+        });
+        eqLevels = nextLevels;
+        updateVADVisualizer(rms, eqLevels, isCurrentlyActive && peakNormalized > EQ_THRESHOLD);
+      }
+
+      // Update silence countdown UI
+      currentSilenceMs = speechActive ? silenceAccumulated : 0;
+      updateSilenceUI(currentSilenceMs);
 
       // Continue processing
       vadAnimationId = requestAnimationFrame(processVAD);
@@ -1053,6 +1413,9 @@
         silenceAccumulated = 0;
         recordingStartTime = performance.now();
         lastFrameTime = 0;
+        currentSilenceMs = 0;
+        updateSilenceUI(0);
+        updateVADVisualizer(0, eqLevels, false);
 
         // Start MediaRecorder
         mediaRecorder = new MediaRecorder(stream);
@@ -1100,6 +1463,9 @@
         recordBtn.textContent = 'Start Recording';
         recordBtn.className = 'btn-primary';
         recordingIndicator.classList.remove('active');
+        currentSilenceMs = 0;
+        updateSilenceUI(0);
+        updateVADVisualizer(0, eqLevels, false);
       }
     }
 
@@ -1112,6 +1478,8 @@
         const audioContext = new AudioContext({ sampleRate: 16000 });
         const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
         await audioContext.close();
+        capturedAudioBuffer = audioBuffer;
+        drawWaveform(capturedAudioBuffer);
 
         const audio = audioBufferToFloat32(audioBuffer);
 
@@ -1387,6 +1755,8 @@
       conversation.innerHTML = '<div class="empty-state">No conversation yet. Start recording to begin!</div>';
       lastResponse = '';
       conversationHistory = []; // Clear conversation history
+      capturedAudioBuffer = null;
+      drawWaveform(null);
     });
 
     sendBtn.addEventListener('click', async () => {
