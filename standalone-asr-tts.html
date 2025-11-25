@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ASR-TTS Standalone Demo</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .container {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 800px;
+      width: 100%;
+      padding: 30px;
+    }
+
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 28px;
+    }
+
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+
+    .status-section {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+      margin-bottom: 25px;
+    }
+
+    .status-card {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 15px;
+      border-left: 4px solid #667eea;
+    }
+
+    .status-card h3 {
+      font-size: 14px;
+      color: #555;
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .status-card p {
+      font-size: 13px;
+      color: #777;
+      margin: 3px 0;
+    }
+
+    .status-card.ready {
+      border-left-color: #10b981;
+    }
+
+    .status-card.loading {
+      border-left-color: #f59e0b;
+    }
+
+    .status-card.error {
+      border-left-color: #ef4444;
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 25px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      flex: 1;
+      min-width: 140px;
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: #667eea;
+      color: white;
+    }
+
+    .btn-danger {
+      background: #ef4444;
+      color: white;
+    }
+
+    .btn-success {
+      background: #10b981;
+      color: white;
+    }
+
+    .btn-secondary {
+      background: #6b7280;
+      color: white;
+    }
+
+    .recording-indicator {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 15px;
+      background: #fee2e2;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+
+    .recording-indicator.active {
+      display: flex;
+    }
+
+    .recording-dot {
+      width: 12px;
+      height: 12px;
+      background: #ef4444;
+      border-radius: 50%;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .conversation {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 20px;
+      max-height: 400px;
+      overflow-y: auto;
+      margin-bottom: 20px;
+    }
+
+    .message {
+      margin-bottom: 15px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      max-width: 85%;
+    }
+
+    .message.user {
+      background: #667eea;
+      color: white;
+      margin-left: auto;
+      text-align: right;
+    }
+
+    .message.assistant {
+      background: white;
+      color: #333;
+      border: 1px solid #e5e7eb;
+    }
+
+    .message-label {
+      font-size: 11px;
+      font-weight: 600;
+      margin-bottom: 5px;
+      opacity: 0.8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .message-text {
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .input-group {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    input[type="text"], input[type="url"] {
+      flex: 1;
+      padding: 12px 16px;
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: border-color 0.2s;
+    }
+
+    input[type="text"]:focus, input[type="url"]:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .settings {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 20px;
+    }
+
+    .settings h3 {
+      font-size: 14px;
+      color: #555;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 6px;
+      background: #e5e7eb;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: #667eea;
+      border-radius: 3px;
+      transition: width 0.3s;
+    }
+
+    .empty-state {
+      text-align: center;
+      color: #9ca3af;
+      padding: 40px 20px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>ASR-TTS Standalone Demo</h1>
+    <p class="subtitle">Voice conversation with Whisper ASR, Ollama LLM, and Browser TTS</p>
+
+    <div class="status-section">
+      <div class="status-card loading" id="asr-status">
+        <h3>Whisper ASR</h3>
+        <p id="asr-state">Initializing...</p>
+        <div class="progress-bar" id="asr-progress" style="display: none;">
+          <div class="progress-fill" style="width: 0%;"></div>
+        </div>
+      </div>
+
+      <div class="status-card loading" id="tts-status">
+        <h3>Browser TTS</h3>
+        <p id="tts-state">Initializing...</p>
+        <div class="progress-bar" id="tts-progress" style="display: none;">
+          <div class="progress-fill" style="width: 0%;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings">
+      <h3>Settings</h3>
+      <div class="input-group">
+        <input type="url" id="ollama-url" value="http://localhost:11434" placeholder="Ollama API URL">
+        <select id="ollama-model" style="flex: 1; padding: 12px 16px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px; background: white;">
+          <option value="">Loading models...</option>
+        </select>
+        <button class="btn-secondary" id="refresh-models" style="flex: 0; min-width: auto; padding: 12px 20px;">↻</button>
+      </div>
+      <details style="margin-top: 10px; font-size: 13px; color: #666;">
+        <summary style="cursor: pointer; font-weight: 600; margin-bottom: 5px;">ℹ️ Setup Instructions</summary>
+        <ol style="margin: 10px 0 0 20px; line-height: 1.8;">
+          <li>Install and run Ollama: <code>ollama serve</code></li>
+          <li>Pull a model: <code>ollama pull llama3.2</code></li>
+          <li>Whisper ASR loads automatically (~40MB first time)</li>
+          <li>TTS uses native browser speech synthesis</li>
+          <li>Grant microphone permission when prompted</li>
+        </ol>
+      </details>
+    </div>
+
+    <div class="recording-indicator" id="recording-indicator">
+      <div class="recording-dot"></div>
+      <span>Recording...</span>
+    </div>
+
+    <div class="controls">
+      <button class="btn-primary" id="record-btn" disabled>Start Recording</button>
+      <button class="btn-success" id="speak-btn" disabled>Speak Response</button>
+      <button class="btn-secondary" id="clear-btn">Clear Conversation</button>
+    </div>
+
+    <div class="conversation" id="conversation">
+      <div class="empty-state">No conversation yet. Start recording to begin!</div>
+    </div>
+
+    <div id="ollama-status" style="display: none; padding: 12px; background: #f0f9ff; border-radius: 8px; margin-bottom: 15px; text-align: center; color: #0369a1; font-size: 14px; font-weight: 500;">
+      Generating response...
+    </div>
+
+    <div class="input-group">
+      <input type="text" id="text-input" placeholder="Or type your message here..." disabled>
+      <button class="btn-primary" id="send-btn" disabled>Send</button>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "@xenova/transformers": "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import { env, pipeline } from '@xenova/transformers';
+
+    // Configure Transformers.js
+    env.allowLocalModels = false;
+    env.backends.onnx.wasm.numThreads = 1;
+
+    // Global state
+    let whisperModel = null;
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let lastResponse = '';
+    let isRecording = false;
+    let conversationHistory = []; // Store chat history
+
+    // DOM elements
+    const asrStatus = document.getElementById('asr-status');
+    const asrState = document.getElementById('asr-state');
+    const asrProgress = document.getElementById('asr-progress');
+    const ttsStatus = document.getElementById('tts-status');
+    const ttsState = document.getElementById('tts-state');
+    const ttsProgress = document.getElementById('tts-progress');
+    const recordBtn = document.getElementById('record-btn');
+    const speakBtn = document.getElementById('speak-btn');
+    const clearBtn = document.getElementById('clear-btn');
+    const sendBtn = document.getElementById('send-btn');
+    const textInput = document.getElementById('text-input');
+    const conversation = document.getElementById('conversation');
+    const recordingIndicator = document.getElementById('recording-indicator');
+    const ollamaUrl = document.getElementById('ollama-url');
+    const ollamaModel = document.getElementById('ollama-model');
+    const refreshModelsBtn = document.getElementById('refresh-models');
+
+    // Fetch Ollama models
+    async function fetchOllamaModels() {
+      try {
+        ollamaModel.innerHTML = '<option value="">Loading models...</option>';
+
+        const response = await fetch(`${ollamaUrl.value}/api/tags`);
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch models: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const models = data.models || [];
+
+        if (models.length === 0) {
+          ollamaModel.innerHTML = '<option value="">No models found</option>';
+          return;
+        }
+
+        // Clear and populate dropdown
+        ollamaModel.innerHTML = '';
+
+        // Try to restore saved model or use first available
+        const savedModel = localStorage.getItem('ollama_selected_model');
+        let selectedModel = savedModel;
+
+        models.forEach((model, index) => {
+          const option = document.createElement('option');
+          option.value = model.name;
+          option.textContent = `${model.name} (${formatSize(model.size)})`;
+          ollamaModel.appendChild(option);
+
+          // If no saved model, use first one
+          if (!selectedModel && index === 0) {
+            selectedModel = model.name;
+          }
+        });
+
+        // Set selected model
+        if (selectedModel && models.some(m => m.name === selectedModel)) {
+          ollamaModel.value = selectedModel;
+        }
+
+        // Save selection on change
+        ollamaModel.addEventListener('change', () => {
+          localStorage.setItem('ollama_selected_model', ollamaModel.value);
+        });
+
+        console.log(`Loaded ${models.length} Ollama models`);
+
+      } catch (error) {
+        console.error('Failed to fetch Ollama models:', error);
+        ollamaModel.innerHTML = `<option value="">Error: ${error.message}</option>`;
+      }
+    }
+
+    // Format bytes to human-readable size
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+      return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+    }
+
+    // Initialize models
+    async function initWhisper() {
+      try {
+        updateStatus('asr', 'loading', 'Loading Whisper model...');
+
+        whisperModel = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny', {
+          quantized: true,
+          progress_callback: (progress) => {
+            if (progress.progress) {
+              asrProgress.style.display = 'block';
+              asrProgress.querySelector('.progress-fill').style.width = `${progress.progress * 100}%`;
+            }
+            if (progress.text) {
+              asrState.textContent = progress.text;
+            }
+          }
+        });
+
+        updateStatus('asr', 'ready', 'Ready (CPU/WASM)');
+        asrProgress.style.display = 'none';
+        recordBtn.disabled = false;
+        textInput.disabled = false;
+        sendBtn.disabled = false;
+      } catch (error) {
+        updateStatus('asr', 'error', `Error: ${error.message}`);
+      }
+    }
+
+    async function initPiper() {
+      // Using browser TTS only for this standalone version
+      // For Piper TTS with ONNX Runtime, you would need to:
+      // 1. Load ONNX Runtime Web separately (complex CDN setup)
+      // 2. Host Piper model files
+      // 3. Handle phonemizer separately
+
+      if (!window.speechSynthesis) {
+        updateStatus('tts', 'error', 'Browser TTS not supported');
+        return;
+      }
+
+      updateStatus('tts', 'ready', 'Using browser TTS');
+      speakBtn.disabled = false;
+    }
+
+    // Status update helper
+    function updateStatus(model, state, message) {
+      const statusCard = model === 'asr' ? asrStatus : ttsStatus;
+      const stateElement = model === 'asr' ? asrState : ttsState;
+
+      statusCard.className = `status-card ${state}`;
+      stateElement.textContent = message;
+    }
+
+    // Audio recording
+    async function startRecording() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+
+        mediaRecorder.ondataavailable = (event) => {
+          audioChunks.push(event.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+          await processAudio(audioBlob);
+          stream.getTracks().forEach(track => track.stop());
+        };
+
+        mediaRecorder.start();
+        isRecording = true;
+        recordBtn.textContent = 'Stop Recording';
+        recordBtn.className = 'btn-danger';
+        recordingIndicator.classList.add('active');
+      } catch (error) {
+        alert('Error accessing microphone: ' + error.message);
+      }
+    }
+
+    function stopRecording() {
+      if (mediaRecorder && isRecording) {
+        mediaRecorder.stop();
+        isRecording = false;
+        recordBtn.textContent = 'Start Recording';
+        recordBtn.className = 'btn-primary';
+        recordingIndicator.classList.remove('active');
+      }
+    }
+
+    // Audio processing
+    async function processAudio(audioBlob) {
+      try {
+        updateStatus('asr', 'loading', 'Transcribing...');
+
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const audioContext = new AudioContext({ sampleRate: 16000 });
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+        await audioContext.close();
+
+        const audio = audioBufferToFloat32(audioBuffer);
+
+        const result = await whisperModel(audio, {
+          chunk_length_s: 30,
+          stride_length_s: 5,
+          return_timestamps: false
+        });
+
+        updateStatus('asr', 'ready', 'Ready (CPU/WASM)');
+
+        const transcription = result.text.trim();
+        if (transcription) {
+          addMessage('user', transcription);
+          await sendToOllama(transcription);
+        }
+      } catch (error) {
+        updateStatus('asr', 'error', `Transcription error: ${error.message}`);
+        console.error('Transcription error:', error);
+      }
+    }
+
+    function audioBufferToFloat32(buffer) {
+      const mono = buffer.numberOfChannels === 1
+        ? buffer.getChannelData(0)
+        : mixToMono(buffer);
+
+      return buffer.sampleRate === 16000
+        ? mono
+        : resample(mono, buffer.sampleRate, 16000);
+    }
+
+    function mixToMono(buffer) {
+      const left = buffer.getChannelData(0);
+      const right = buffer.getChannelData(1);
+      const length = Math.min(left.length, right.length);
+      const mono = new Float32Array(length);
+
+      for (let i = 0; i < length; i++) {
+        mono[i] = (left[i] + right[i]) / 2;
+      }
+
+      return mono;
+    }
+
+    function resample(data, sourceSampleRate, targetSampleRate) {
+      const ratio = sourceSampleRate / targetSampleRate;
+      const newLength = Math.round(data.length / ratio);
+      const result = new Float32Array(newLength);
+
+      for (let i = 0; i < newLength; i++) {
+        const position = i * ratio;
+        const leftIndex = Math.floor(position);
+        const rightIndex = Math.min(data.length - 1, leftIndex + 1);
+        const interpolate = position - leftIndex;
+        result[i] = (1 - interpolate) * data[leftIndex] + interpolate * data[rightIndex];
+      }
+
+      return result;
+    }
+
+    // Ollama integration (using OpenAI-compatible chat API)
+    async function sendToOllama(userMessage) {
+      const llmStatus = document.getElementById('ollama-status');
+
+      try {
+        // Show generating indicator
+        if (llmStatus) {
+          llmStatus.textContent = 'Generating response...';
+          llmStatus.style.display = 'block';
+        }
+
+        // System prompt for voice assistant
+        const SYSTEM_PROMPT = "You are the voice of a hands-free companion. Keep replies short (max three sentences), helpful, and speak in the first person.";
+
+        // Add user message to history
+        conversationHistory.push({
+          role: 'user',
+          content: userMessage
+        });
+
+        // Prepare messages with system prompt
+        const messages = [
+          { role: 'system', content: SYSTEM_PROMPT },
+          ...conversationHistory
+        ];
+
+        // Use OpenAI-compatible chat completions endpoint with streaming
+        const response = await fetch(`${ollamaUrl.value}/v1/chat/completions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: ollamaModel.value,
+            messages: messages,
+            temperature: 0.7,
+            max_tokens: 1024,
+            stream: true
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Ollama error: ${response.status} ${response.statusText}`);
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('Failed to get response reader');
+        }
+
+        const decoder = new TextDecoder();
+        let fullText = '';
+        let assistantMessageDiv = null;
+
+        // Create a streaming assistant message
+        if (conversation.querySelector('.empty-state')) {
+          conversation.innerHTML = '';
+        }
+        assistantMessageDiv = document.createElement('div');
+        assistantMessageDiv.className = 'message assistant';
+        assistantMessageDiv.innerHTML = `
+          <div class="message-label">Assistant</div>
+          <div class="message-text">Thinking...</div>
+        `;
+        conversation.appendChild(assistantMessageDiv);
+        const textDiv = assistantMessageDiv.querySelector('.message-text');
+
+        // Process the stream
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n').filter(line => line.trim().startsWith('data: '));
+
+          for (const line of lines) {
+            const data = line.replace(/^data: /, '');
+            if (data === '[DONE]') break;
+
+            try {
+              const parsed = JSON.parse(data);
+              const delta = parsed.choices?.[0]?.delta?.content ?? '';
+              if (delta) {
+                fullText += delta;
+                textDiv.textContent = fullText;
+                conversation.scrollTop = conversation.scrollHeight;
+              }
+            } catch (e) {
+              // Skip invalid JSON lines
+            }
+          }
+        }
+
+        // If no content was streamed, show an error
+        if (!fullText.trim()) {
+          textDiv.textContent = 'No response received from Ollama';
+          throw new Error('No response received');
+        }
+
+        // Add assistant response to history
+        const trimmedResponse = fullText.trim();
+        conversationHistory.push({
+          role: 'assistant',
+          content: trimmedResponse
+        });
+
+        lastResponse = trimmedResponse;
+
+        // Prune conversation history to keep context manageable (last 10 messages)
+        if (conversationHistory.length > 10) {
+          conversationHistory = conversationHistory.slice(-10);
+        }
+
+      } catch (error) {
+        console.error('Ollama error:', error);
+        addMessage('assistant', `Error: ${error.message}`);
+
+        // Remove user message from history on error
+        if (conversationHistory.length > 0 && conversationHistory[conversationHistory.length - 1].role === 'user') {
+          conversationHistory.pop();
+        }
+      } finally {
+        // Hide generating indicator
+        if (llmStatus) {
+          llmStatus.style.display = 'none';
+        }
+      }
+    }
+
+    // TTS synthesis (using browser TTS)
+    function speakText(text) {
+      if (!window.speechSynthesis) {
+        alert('Browser TTS not supported');
+        return;
+      }
+
+      if (!text || !text.trim()) {
+        return;
+      }
+
+      // Cancel any ongoing speech
+      window.speechSynthesis.cancel();
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+
+      updateStatus('tts', 'loading', 'Speaking...');
+
+      utterance.onend = () => {
+        updateStatus('tts', 'ready', 'Using browser TTS');
+      };
+
+      utterance.onerror = (error) => {
+        console.error('TTS error:', error);
+        updateStatus('tts', 'error', `Speech error: ${error.error}`);
+      };
+
+      window.speechSynthesis.speak(utterance);
+    }
+
+    // UI helpers
+    function addMessage(role, text) {
+      if (conversation.querySelector('.empty-state')) {
+        conversation.innerHTML = '';
+      }
+
+      const messageDiv = document.createElement('div');
+      messageDiv.className = `message ${role}`;
+      messageDiv.innerHTML = `
+        <div class="message-label">${role === 'user' ? 'You' : 'Assistant'}</div>
+        <div class="message-text">${text}</div>
+      `;
+
+      conversation.appendChild(messageDiv);
+      conversation.scrollTop = conversation.scrollHeight;
+    }
+
+    // Event listeners
+    recordBtn.addEventListener('click', () => {
+      if (isRecording) {
+        stopRecording();
+      } else {
+        startRecording();
+      }
+    });
+
+    speakBtn.addEventListener('click', () => {
+      if (lastResponse) {
+        speakText(lastResponse);
+      }
+    });
+
+    clearBtn.addEventListener('click', () => {
+      conversation.innerHTML = '<div class="empty-state">No conversation yet. Start recording to begin!</div>';
+      lastResponse = '';
+      conversationHistory = []; // Clear conversation history
+    });
+
+    sendBtn.addEventListener('click', async () => {
+      const text = textInput.value.trim();
+      if (text) {
+        addMessage('user', text);
+        textInput.value = '';
+        await sendToOllama(text);
+      }
+    });
+
+    textInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        sendBtn.click();
+      }
+    });
+
+    // Refresh models button
+    refreshModelsBtn.addEventListener('click', fetchOllamaModels);
+
+    // Initialize
+    initWhisper();
+    initPiper();
+    fetchOllamaModels();
+  </script>
+</body>
+</html>

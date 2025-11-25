@@ -22,3 +22,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Static Site Generated Files
+*.pem
+config.json
+STANDALONE_README.md
+SUMMARY.md
+minimal-test.html
+.venv
+OLLAMA_INTEGRATION.md
