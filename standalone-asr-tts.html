@@ -12,8 +12,9 @@
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: #0f0f0f;
+      color: #e5e5e5;
       min-height: 100vh;
       padding: 20px;
       display: flex;
@@ -22,123 +23,162 @@
     }
 
     .container {
-      background: white;
-      border-radius: 16px;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-      max-width: 800px;
+      background: #1a1a1a;
+      border-radius: 12px;
+      border: 1px solid #2d2d2d;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+      max-width: 900px;
       width: 100%;
-      padding: 30px;
+      padding: 24px;
     }
 
     h1 {
-      color: #333;
-      margin-bottom: 10px;
-      font-size: 28px;
+      color: #f5f5f5;
+      margin-bottom: 8px;
+      font-size: 24px;
+      font-weight: 600;
     }
 
     .subtitle {
-      color: #666;
-      margin-bottom: 30px;
-      font-size: 14px;
+      color: #a0a0a0;
+      margin-bottom: 24px;
+      font-size: 13px;
     }
 
     .status-section {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 15px;
-      margin-bottom: 25px;
+      gap: 12px;
+      margin-bottom: 20px;
     }
 
     .status-card {
-      background: #f8f9fa;
+      background: #242424;
       border-radius: 8px;
-      padding: 15px;
-      border-left: 4px solid #667eea;
+      padding: 14px;
+      border: 1px solid #2d2d2d;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .status-card::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: #3b82f6;
+      transition: background 0.3s;
+    }
+
+    .status-card.ready::before {
+      background: #10b981;
+    }
+
+    .status-card.loading::before {
+      background: #f59e0b;
+    }
+
+    .status-card.error::before {
+      background: #ef4444;
     }
 
     .status-card h3 {
-      font-size: 14px;
-      color: #555;
-      margin-bottom: 5px;
+      font-size: 12px;
+      color: #b0b0b0;
+      margin-bottom: 6px;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.8px;
+      font-weight: 500;
     }
 
     .status-card p {
       font-size: 13px;
-      color: #777;
-      margin: 3px 0;
-    }
-
-    .status-card.ready {
-      border-left-color: #10b981;
-    }
-
-    .status-card.loading {
-      border-left-color: #f59e0b;
-    }
-
-    .status-card.error {
-      border-left-color: #ef4444;
+      color: #e0e0e0;
+      margin: 4px 0;
     }
 
     .controls {
       display: flex;
       gap: 10px;
-      margin-bottom: 25px;
+      margin-bottom: 20px;
       flex-wrap: wrap;
     }
 
     button {
-      padding: 12px 24px;
-      border: none;
+      padding: 11px 20px;
+      border: 1px solid #3a3a3a;
       border-radius: 8px;
-      font-size: 14px;
-      font-weight: 600;
+      font-size: 13px;
+      font-weight: 500;
       cursor: pointer;
       transition: all 0.2s;
       flex: 1;
-      min-width: 140px;
+      min-width: 130px;
+      background: #2a2a2a;
+      color: #e5e5e5;
     }
 
     button:hover:not(:disabled) {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      background: #333333;
+      border-color: #4a4a4a;
     }
 
     button:disabled {
-      opacity: 0.5;
+      opacity: 0.4;
       cursor: not-allowed;
     }
 
     .btn-primary {
-      background: #667eea;
+      background: #3b82f6;
+      border-color: #2563eb;
       color: white;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: #2563eb;
     }
 
     .btn-danger {
-      background: #ef4444;
+      background: #dc2626;
+      border-color: #b91c1c;
       color: white;
+    }
+
+    .btn-danger:hover:not(:disabled) {
+      background: #b91c1c;
     }
 
     .btn-success {
-      background: #10b981;
+      background: #059669;
+      border-color: #047857;
       color: white;
     }
 
+    .btn-success:hover:not(:disabled) {
+      background: #047857;
+    }
+
     .btn-secondary {
-      background: #6b7280;
+      background: #4b5563;
+      border-color: #374151;
       color: white;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: #374151;
     }
 
     .recording-indicator {
       display: none;
       align-items: center;
       gap: 10px;
-      padding: 15px;
-      background: #fee2e2;
+      padding: 12px 16px;
+      background: #2a1a1a;
+      border: 1px solid #3d2020;
       border-radius: 8px;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
     }
 
     .recording-indicator.active {
@@ -146,124 +186,173 @@
     }
 
     .recording-dot {
-      width: 12px;
-      height: 12px;
+      width: 10px;
+      height: 10px;
       background: #ef4444;
       border-radius: 50%;
       animation: pulse 1.5s ease-in-out infinite;
     }
 
+    .recording-indicator span {
+      color: #ef4444;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
     @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.3; }
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.9); }
     }
 
     .conversation {
-      background: #f8f9fa;
+      background: #161616;
+      border: 1px solid #2d2d2d;
       border-radius: 8px;
-      padding: 20px;
-      max-height: 400px;
+      padding: 16px;
+      max-height: 450px;
       overflow-y: auto;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
+    }
+
+    .conversation::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .conversation::-webkit-scrollbar-track {
+      background: #1a1a1a;
+      border-radius: 4px;
+    }
+
+    .conversation::-webkit-scrollbar-thumb {
+      background: #3a3a3a;
+      border-radius: 4px;
+    }
+
+    .conversation::-webkit-scrollbar-thumb:hover {
+      background: #4a4a4a;
     }
 
     .message {
-      margin-bottom: 15px;
-      padding: 12px 16px;
+      margin-bottom: 12px;
+      padding: 10px 14px;
       border-radius: 8px;
-      max-width: 85%;
+      max-width: 80%;
     }
 
     .message.user {
-      background: #667eea;
-      color: white;
+      background: #1e3a5f;
+      color: #e5e5e5;
       margin-left: auto;
       text-align: right;
+      border: 1px solid #2d4a6f;
     }
 
     .message.assistant {
-      background: white;
-      color: #333;
-      border: 1px solid #e5e7eb;
+      background: #242424;
+      color: #e5e5e5;
+      border: 1px solid #2d2d2d;
     }
 
     .message-label {
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 600;
-      margin-bottom: 5px;
-      opacity: 0.8;
+      margin-bottom: 4px;
+      opacity: 0.7;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.6px;
     }
 
     .message-text {
-      font-size: 14px;
-      line-height: 1.5;
+      font-size: 13px;
+      line-height: 1.6;
     }
 
     .input-group {
       display: flex;
-      gap: 10px;
-      margin-bottom: 20px;
+      gap: 8px;
+      margin-bottom: 16px;
     }
 
-    input[type="text"], input[type="url"] {
+    input[type="text"], input[type="url"], input[type="number"], select {
       flex: 1;
-      padding: 12px 16px;
-      border: 2px solid #e5e7eb;
+      padding: 10px 14px;
+      border: 1px solid #3a3a3a;
       border-radius: 8px;
-      font-size: 14px;
-      transition: border-color 0.2s;
+      font-size: 13px;
+      background: #242424;
+      color: #e5e5e5;
+      transition: border-color 0.2s, background 0.2s;
     }
 
-    input[type="text"]:focus, input[type="url"]:focus {
+    input[type="text"]:focus, input[type="url"]:focus, input[type="number"]:focus, select:focus {
       outline: none;
-      border-color: #667eea;
+      border-color: #3b82f6;
+      background: #2a2a2a;
+    }
+
+    select {
+      cursor: pointer;
+    }
+
+    select option {
+      background: #242424;
+      color: #e5e5e5;
     }
 
     .settings {
-      background: #f8f9fa;
+      background: #1f1f1f;
+      border: 1px solid #2d2d2d;
       border-radius: 8px;
-      padding: 15px;
-      margin-bottom: 20px;
+      padding: 14px;
+      margin-bottom: 16px;
     }
 
     .settings h3 {
-      font-size: 14px;
-      color: #555;
+      font-size: 12px;
+      color: #b0b0b0;
       margin-bottom: 10px;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.8px;
+      font-weight: 500;
     }
 
     .progress-bar {
       width: 100%;
-      height: 6px;
-      background: #e5e7eb;
-      border-radius: 3px;
+      height: 4px;
+      background: #2a2a2a;
+      border-radius: 2px;
       overflow: hidden;
       margin-top: 8px;
     }
 
     .progress-fill {
       height: 100%;
-      background: #667eea;
-      border-radius: 3px;
+      background: #3b82f6;
+      border-radius: 2px;
       transition: width 0.3s;
     }
 
     .empty-state {
       text-align: center;
-      color: #9ca3af;
-      padding: 40px 20px;
-      font-size: 14px;
+      color: #6b7280;
+      padding: 60px 20px;
+      font-size: 13px;
+    }
+
+    select {
+      appearance: none;
+      background-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="%23a0a0a0"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>');
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      background-size: 16px;
+      padding-right: 32px;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>ASR-TTS Standalone Demo</h1>
-    <p class="subtitle">Voice conversation with Whisper ASR, Ollama LLM, and Browser TTS</p>
+    <h1>Voice Assistant</h1>
+    <p class="subtitle">Whisper ASR · Ollama LLM · Piper TTS</p>
 
     <div class="status-section">
       <div class="status-card loading" id="asr-status">
@@ -272,36 +361,35 @@
         <div class="progress-bar" id="asr-progress" style="display: none;">
           <div class="progress-fill" style="width: 0%;"></div>
         </div>
+        <select id="whisper-model" style="width: 100%; margin-top: 8px;" disabled>
+          <option value="Xenova/whisper-tiny">Whisper Tiny (~75 MB)</option>
+          <option value="Xenova/whisper-base">Whisper Base (~142 MB)</option>
+          <option value="Xenova/whisper-small">Whisper Small (~462 MB)</option>
+          <option value="distil-whisper/distil-medium.en">Distil Whisper Medium EN (~400 MB)</option>
+        </select>
       </div>
 
       <div class="status-card loading" id="tts-status">
-        <h3>Browser TTS</h3>
+        <h3>Piper TTS</h3>
         <p id="tts-state">Initializing...</p>
         <div class="progress-bar" id="tts-progress" style="display: none;">
           <div class="progress-fill" style="width: 0%;"></div>
         </div>
+        <select id="tts-voice" style="width: 100%; margin-top: 8px;" disabled>
+          <option value="">Loading voices...</option>
+        </select>
       </div>
     </div>
 
     <div class="settings">
-      <h3>Settings</h3>
+      <h3>Ollama Settings</h3>
       <div class="input-group">
         <input type="url" id="ollama-url" value="http://localhost:11434" placeholder="Ollama API URL">
-        <select id="ollama-model" style="flex: 1; padding: 12px 16px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px; background: white;">
+        <select id="ollama-model" style="flex: 1;">
           <option value="">Loading models...</option>
         </select>
         <button class="btn-secondary" id="refresh-models" style="flex: 0; min-width: auto; padding: 12px 20px;">↻</button>
       </div>
-      <details style="margin-top: 10px; font-size: 13px; color: #666;">
-        <summary style="cursor: pointer; font-weight: 600; margin-bottom: 5px;">ℹ️ Setup Instructions</summary>
-        <ol style="margin: 10px 0 0 20px; line-height: 1.8;">
-          <li>Install and run Ollama: <code>ollama serve</code></li>
-          <li>Pull a model: <code>ollama pull llama3.2</code></li>
-          <li>Whisper ASR loads automatically (~40MB first time)</li>
-          <li>TTS uses native browser speech synthesis</li>
-          <li>Grant microphone permission when prompted</li>
-        </ol>
-      </details>
     </div>
 
     <div class="recording-indicator" id="recording-indicator">
@@ -332,17 +420,279 @@
   <script type="importmap">
   {
     "imports": {
-      "@xenova/transformers": "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js"
+      "@xenova/transformers": "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js",
+      "onnxruntime-web": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.2/dist/ort.min.mjs",
+      "phonemizer": "https://cdn.jsdelivr.net/npm/phonemizer@1.2.1/+esm"
     }
   }
   </script>
 
   <script type="module">
     import { env, pipeline } from '@xenova/transformers';
+    import * as ort from 'onnxruntime-web';
+    import { phonemize } from 'phonemizer';
 
     // Configure Transformers.js
     env.allowLocalModels = false;
     env.backends.onnx.wasm.numThreads = 1;
+
+    // Set ONNX Runtime WASM paths (using CDN)
+    if (ort?.env?.wasm) {
+      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.2/dist/';
+    } else {
+      console.warn('ONNXRuntime env not available; skipping wasm path configuration');
+    }
+
+    // ===== IndexedDB Model Cache =====
+    class ModelCache {
+      constructor() {
+        this.dbName = 'piper-tts-cache';
+        this.storeName = 'models';
+        this.dbVersion = 1;
+        this.expirationMs = 7 * 24 * 60 * 60 * 1000; // 7 days
+      }
+
+      async openDB() {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open(this.dbName, this.dbVersion);
+
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => resolve(request.result);
+
+          request.onupgradeneeded = (event) => {
+            const db = event.target.result;
+            if (!db.objectStoreNames.contains(this.storeName)) {
+              db.createObjectStore(this.storeName);
+            }
+          };
+        });
+      }
+
+      async get(url) {
+        try {
+          const db = await this.openDB();
+          const transaction = db.transaction([this.storeName], 'readonly');
+          const store = transaction.objectStore(this.storeName);
+
+          return new Promise((resolve, reject) => {
+            const request = store.get(url);
+            request.onsuccess = () => {
+              const cached = request.result;
+              if (cached && Date.now() - cached.timestamp < this.expirationMs) {
+                resolve(cached.data);
+              } else {
+                resolve(null);
+              }
+            };
+            request.onerror = () => reject(request.error);
+          });
+        } catch (error) {
+          console.error('IndexedDB get error:', error);
+          return null;
+        }
+      }
+
+      async set(url, data) {
+        try {
+          const db = await this.openDB();
+          const transaction = db.transaction([this.storeName], 'readwrite');
+          const store = transaction.objectStore(this.storeName);
+
+          return new Promise((resolve, reject) => {
+            const request = store.put({ data, timestamp: Date.now() }, url);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+          });
+        } catch (error) {
+          console.error('IndexedDB set error:', error);
+        }
+      }
+    }
+
+    async function cachedFetch(url) {
+      const cache = new ModelCache();
+
+      // Try to get from cache first
+      const cachedData = await cache.get(url);
+      if (cachedData) {
+        console.log(`Using cached data for: ${url}`);
+        return new Response(cachedData);
+      }
+
+      // Fetch from network
+      console.log(`Fetching from network: ${url}`);
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      // Store in cache
+      const data = await response.arrayBuffer();
+      await cache.set(url, data);
+
+      return new Response(data, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+    }
+
+    // ===== Piper TTS Class =====
+    class PiperTTS {
+      constructor(voiceConfig, session) {
+        this.voiceConfig = voiceConfig;
+        this.session = session;
+      }
+
+      static async from_pretrained(modelPath, configPath) {
+        // Fetch model and config with caching
+        const [modelResponse, configResponse] = await Promise.all([
+          cachedFetch(modelPath),
+          cachedFetch(configPath),
+        ]);
+
+        const [modelBuffer, voiceConfig] = await Promise.all([
+          modelResponse.arrayBuffer(),
+          configResponse.json(),
+        ]);
+
+        // Create ONNX Runtime inference session
+        const session = await ort.InferenceSession.create(
+          new Uint8Array(modelBuffer),
+          {
+            executionProviders: [{ name: 'wasm' }],
+          }
+        );
+
+        return new PiperTTS(voiceConfig, session);
+      }
+
+      async textToPhonemes(text) {
+        if (!this.voiceConfig) {
+          return [];
+        }
+
+        if (this.voiceConfig.phoneme_type === 'text') {
+          return [Array.from(text.normalize('NFD'))];
+        }
+
+        const voice = this.voiceConfig.espeak?.voice || 'en-us';
+        const phonemes = await phonemize(text, voice);
+
+        let phonemeText;
+        if (typeof phonemes === 'string') {
+          phonemeText = phonemes;
+        } else if (Array.isArray(phonemes)) {
+          phonemeText = phonemes.join(' ');
+        } else if (phonemes && typeof phonemes === 'object') {
+          phonemeText = phonemes.text || phonemes.phonemes || String(phonemes);
+        } else {
+          phonemeText = String(phonemes || text);
+        }
+
+        const sentences = phonemeText
+          .split(/[.!?]+/)
+          .filter((s) => s.trim().length > 0);
+
+        return sentences.map((sentence) =>
+          Array.from(sentence.trim().normalize('NFD'))
+        );
+      }
+
+      phonemesToIds(textPhonemes) {
+        if (!this.voiceConfig || !this.voiceConfig.phoneme_id_map) {
+          throw new Error('Phoneme ID map not available');
+        }
+
+        const idMap = this.voiceConfig.phoneme_id_map;
+        const BOS = '^';
+        const EOS = '$';
+        const PAD = '_';
+        const ids = [];
+
+        for (const sentencePhonemes of textPhonemes) {
+          ids.push(idMap[BOS]);
+          ids.push(idMap[PAD]);
+
+          for (const phoneme of sentencePhonemes) {
+            if (phoneme in idMap) {
+              ids.push(idMap[phoneme]);
+              ids.push(idMap[PAD]);
+            }
+          }
+          ids.push(idMap[EOS]);
+        }
+
+        return ids;
+      }
+
+      getSpeakers() {
+        if (!this.voiceConfig || !this.voiceConfig.num_speakers || this.voiceConfig.num_speakers <= 1) {
+          return [{ id: 0, name: 'Voice 1' }];
+        }
+
+        const speakerIdMap = this.voiceConfig.speaker_id_map || {};
+        return Object.entries(speakerIdMap)
+          .sort(([, a], [, b]) => a - b)
+          .map(([originalId, id]) => ({
+            id,
+            name: `Voice ${id + 1}`,
+            originalId,
+          }));
+      }
+
+      async synthesize(text, speakerId = 0) {
+        if (!this.session || !this.voiceConfig) {
+          throw new Error('TTS not initialized');
+        }
+
+        // Convert text to phonemes
+        const textPhonemes = await this.textToPhonemes(text);
+        const phonemeIds = this.phonemesToIds(textPhonemes);
+
+        if (phonemeIds.length === 0) {
+          throw new Error('No valid phonemes generated');
+        }
+
+        // Create ONNX tensors
+        const inputs = {
+          input: new ort.Tensor(
+            'int64',
+            new BigInt64Array(phonemeIds.map(id => BigInt(id))),
+            [1, phonemeIds.length]
+          ),
+          input_lengths: new ort.Tensor(
+            'int64',
+            BigInt64Array.from([BigInt(phonemeIds.length)]),
+            [1]
+          ),
+          scales: new ort.Tensor(
+            'float32',
+            Float32Array.from([0.667, 1.0, 0.8]), // noiseScale, lengthScale, noiseWScale
+            [3]
+          ),
+        };
+
+        if (this.voiceConfig.num_speakers > 1) {
+          inputs.sid = new ort.Tensor(
+            'int64',
+            BigInt64Array.from([BigInt(speakerId)]),
+            [1]
+          );
+        }
+
+        // Run inference
+        const results = await this.session.run(inputs);
+        const audioOutput = results.output;
+        const audioData = new Float32Array(audioOutput.data);
+        const sampleRate = this.voiceConfig.audio.sample_rate;
+
+        return { audioData, sampleRate };
+      }
+    }
+
+    // Global TTS instance
+    let piperTTS = null;
 
     // Global state
     let whisperModel = null;
@@ -351,6 +701,33 @@
     let lastResponse = '';
     let isRecording = false;
     let conversationHistory = []; // Store chat history
+
+    // VAD state
+    let audioContext = null;
+    let analyser = null;
+    let vadAnimationId = null;
+    let smoothedEnergy = 0;
+    let backgroundNoise = 0.01;
+    let speechFrames = 0;
+    let speechActive = false;
+    let silenceAccumulated = 0;
+    let recordingStartTime = 0;
+    let lastFrameTime = 0;
+
+    // VAD configuration
+    const VAD_CONFIG = {
+      minRecordingMs: 450,
+      maxRecordingMs: 15000,
+      silenceDurationMs: 900,
+      energyAlpha: 0.3,
+      speechMinHz: 300,
+      speechMaxHz: 3400,
+      minSpeechRatio: 0.25,
+      minZCR: 0.02,
+      maxZCR: 0.4,
+      speechFramesRequired: 3,
+      fftSize: 2048
+    };
 
     // DOM elements
     const asrStatus = document.getElementById('asr-status');
@@ -369,6 +746,8 @@
     const ollamaUrl = document.getElementById('ollama-url');
     const ollamaModel = document.getElementById('ollama-model');
     const refreshModelsBtn = document.getElementById('refresh-models');
+    const whisperModelSelect = document.getElementById('whisper-model');
+    const ttsVoiceSelect = document.getElementById('tts-voice');
 
     // Fetch Ollama models
     async function fetchOllamaModels() {
@@ -439,7 +818,11 @@
       try {
         updateStatus('asr', 'loading', 'Loading Whisper model...');
 
-        whisperModel = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny', {
+        // Load saved model preference or use default
+        const savedModel = localStorage.getItem('whisper_selected_model') || 'Xenova/whisper-tiny';
+        whisperModelSelect.value = savedModel;
+
+        whisperModel = await pipeline('automatic-speech-recognition', savedModel, {
           quantized: true,
           progress_callback: (progress) => {
             if (progress.progress) {
@@ -457,25 +840,73 @@
         recordBtn.disabled = false;
         textInput.disabled = false;
         sendBtn.disabled = false;
+        whisperModelSelect.disabled = false;
       } catch (error) {
         updateStatus('asr', 'error', `Error: ${error.message}`);
       }
     }
 
     async function initPiper() {
-      // Using browser TTS only for this standalone version
-      // For Piper TTS with ONNX Runtime, you would need to:
-      // 1. Load ONNX Runtime Web separately (complex CDN setup)
-      // 2. Host Piper model files
-      // 3. Handle phonemizer separately
+      try {
+        updateStatus('tts', 'loading', 'Loading Piper TTS model...');
 
-      if (!window.speechSynthesis) {
-        updateStatus('tts', 'error', 'Browser TTS not supported');
+        // Use Hugging Face CDN for model files (fully browser-based, no local downloads)
+        // Medium quality voice (known-good path)
+        const baseUrl = 'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium';
+        const modelPath = `${baseUrl}/en_US-libritts_r-medium.onnx`;
+        const configPath = `${baseUrl}/en_US-libritts_r-medium.onnx.json`;
+
+        piperTTS = await PiperTTS.from_pretrained(modelPath, configPath);
+
+        updateStatus('tts', 'ready', 'Piper TTS ready');
+        speakBtn.disabled = false;
+
+        // Load available voices/speakers
+        await loadTTSVoices();
+
+        console.log('Piper TTS initialized successfully');
+      } catch (error) {
+        updateStatus('tts', 'error', `Error: ${error.message}`);
+        console.error('Piper TTS initialization error:', error);
+      }
+    }
+
+    // Load and populate TTS voices (Piper speakers)
+    async function loadTTSVoices() {
+      if (!piperTTS) {
+        ttsVoiceSelect.innerHTML = '<option value="">TTS not initialized</option>';
         return;
       }
 
-      updateStatus('tts', 'ready', 'Using browser TTS');
-      speakBtn.disabled = false;
+      const speakers = piperTTS.getSpeakers();
+
+      if (speakers.length === 0) {
+        ttsVoiceSelect.innerHTML = '<option value="">No voices available</option>';
+        return;
+      }
+
+      const savedVoiceId = localStorage.getItem('tts_selected_voice_id');
+      ttsVoiceSelect.innerHTML = '';
+
+      speakers.forEach((speaker) => {
+        const option = document.createElement('option');
+        option.value = speaker.id;
+        option.textContent = speaker.name;
+        ttsVoiceSelect.appendChild(option);
+
+        // Restore saved voice
+        if (savedVoiceId !== null && parseInt(savedVoiceId) === speaker.id) {
+          ttsVoiceSelect.value = speaker.id;
+        }
+      });
+
+      // If no saved voice, select first available
+      if (savedVoiceId === null && speakers.length > 0) {
+        ttsVoiceSelect.value = speakers[0].id;
+      }
+
+      ttsVoiceSelect.disabled = false;
+      console.log(`Loaded ${speakers.length} Piper TTS speakers`);
     }
 
     // Status update helper
@@ -487,10 +918,143 @@
       stateElement.textContent = message;
     }
 
-    // Audio recording
+    // VAD: Analyze audio and detect speech/silence
+    function processVAD() {
+      if (!isRecording || !analyser) return;
+
+      const now = performance.now();
+      const deltaTime = lastFrameTime ? now - lastFrameTime : 16;
+      lastFrameTime = now;
+
+      // Get frequency and time domain data
+      const bufferLength = analyser.frequencyBinCount;
+      const frequencyBuffer = new Uint8Array(bufferLength);
+      const timeBuffer = new Float32Array(bufferLength);
+
+      analyser.getByteFrequencyData(frequencyBuffer);
+      analyser.getFloatTimeDomainData(timeBuffer);
+
+      // Calculate RMS energy
+      let sumSquares = 0;
+      for (let i = 0; i < timeBuffer.length; i++) {
+        sumSquares += timeBuffer[i] * timeBuffer[i];
+      }
+      const rms = Math.sqrt(sumSquares / timeBuffer.length);
+
+      // Spectral energy analysis (speech frequency range 300-3400Hz)
+      const sampleRate = audioContext.sampleRate;
+      const nyquist = sampleRate / 2;
+      const binWidth = nyquist / bufferLength;
+
+      const speechMinBin = Math.floor(VAD_CONFIG.speechMinHz / binWidth);
+      const speechMaxBin = Math.floor(VAD_CONFIG.speechMaxHz / binWidth);
+
+      let speechEnergy = 0;
+      let totalEnergy = 0;
+
+      for (let i = 0; i < bufferLength; i++) {
+        const magnitude = frequencyBuffer[i];
+        totalEnergy += magnitude;
+        if (i >= speechMinBin && i <= speechMaxBin) {
+          speechEnergy += magnitude;
+        }
+      }
+
+      const speechRatio = totalEnergy > 0 ? speechEnergy / totalEnergy : 0;
+
+      // Zero-Crossing Rate (ZCR)
+      let zeroCrossings = 0;
+      for (let i = 1; i < timeBuffer.length; i++) {
+        if ((timeBuffer[i] >= 0 && timeBuffer[i - 1] < 0) ||
+            (timeBuffer[i] < 0 && timeBuffer[i - 1] >= 0)) {
+          zeroCrossings++;
+        }
+      }
+      const zcr = zeroCrossings / timeBuffer.length;
+
+      // Smoothed energy with EMA
+      smoothedEnergy = VAD_CONFIG.energyAlpha * rms + (1 - VAD_CONFIG.energyAlpha) * smoothedEnergy;
+
+      // Multi-factor speech detection
+      const dynamicThreshold = Math.max(backgroundNoise * 1.5, 0.01);
+      const hasEnergy = smoothedEnergy > dynamicThreshold;
+      const hasSpeechSpectrum = speechRatio > VAD_CONFIG.minSpeechRatio;
+      const hasReasonableZCR = zcr > VAD_CONFIG.minZCR && zcr < VAD_CONFIG.maxZCR;
+      const isSpeechLike = hasEnergy && (hasSpeechSpectrum || hasReasonableZCR);
+
+      // Speech state management with hysteresis
+      if (isSpeechLike) {
+        speechFrames++;
+        silenceAccumulated = 0;
+
+        if (speechFrames >= VAD_CONFIG.speechFramesRequired || speechActive) {
+          speechActive = true;
+          // Adapt noise floor more slowly during speech
+          backgroundNoise = Math.min(
+            backgroundNoise * 0.98 + smoothedEnergy * 0.02,
+            0.015
+          );
+        }
+      } else {
+        speechFrames = Math.max(0, speechFrames - 1);
+
+        if (speechActive) {
+          silenceAccumulated += deltaTime;
+        } else {
+          // Adapt noise floor faster when not speaking
+          backgroundNoise = backgroundNoise * 0.95 + smoothedEnergy * 0.05;
+        }
+      }
+
+      // Auto-stop on silence
+      const recordingElapsed = now - recordingStartTime;
+      const silenceThreshold = dynamicThreshold * 0.5;
+      const isTrueSilence = smoothedEnergy < silenceThreshold && speechRatio < 0.15;
+
+      if (speechActive &&
+          silenceAccumulated >= VAD_CONFIG.silenceDurationMs &&
+          isTrueSilence &&
+          recordingElapsed > VAD_CONFIG.minRecordingMs) {
+        console.log('VAD: Auto-stopping on silence');
+        stopRecording();
+        return;
+      }
+
+      // Max duration check
+      if (recordingElapsed > VAD_CONFIG.maxRecordingMs) {
+        console.log('VAD: Max duration reached');
+        stopRecording();
+        return;
+      }
+
+      // Continue processing
+      vadAnimationId = requestAnimationFrame(processVAD);
+    }
+
+    // Audio recording with VAD
     async function startRecording() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+        // Create audio context and analyser for VAD
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = VAD_CONFIG.fftSize;
+        analyser.smoothingTimeConstant = 0.3;
+
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(analyser);
+
+        // Reset VAD state
+        smoothedEnergy = 0;
+        backgroundNoise = 0.01;
+        speechFrames = 0;
+        speechActive = false;
+        silenceAccumulated = 0;
+        recordingStartTime = performance.now();
+        lastFrameTime = 0;
+
+        // Start MediaRecorder
         mediaRecorder = new MediaRecorder(stream);
         audioChunks = [];
 
@@ -499,6 +1063,17 @@
         };
 
         mediaRecorder.onstop = async () => {
+          // Stop VAD processing
+          if (vadAnimationId) {
+            cancelAnimationFrame(vadAnimationId);
+            vadAnimationId = null;
+          }
+
+          if (audioContext) {
+            await audioContext.close();
+            audioContext = null;
+          }
+
           const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
           await processAudio(audioBlob);
           stream.getTracks().forEach(track => track.stop());
@@ -509,6 +1084,10 @@
         recordBtn.textContent = 'Stop Recording';
         recordBtn.className = 'btn-danger';
         recordingIndicator.classList.add('active');
+
+        // Start VAD processing
+        processVAD();
+
       } catch (error) {
         alert('Error accessing microphone: ' + error.message);
       }
@@ -722,9 +1301,29 @@
     }
 
     // TTS synthesis (using browser TTS)
-    function speakText(text) {
-      if (!window.speechSynthesis) {
-        alert('Browser TTS not supported');
+    // Helper function to play audio from Float32Array
+    function playAudio(audioData, sampleRate) {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const audioBuffer = audioContext.createBuffer(1, audioData.length, sampleRate);
+      audioBuffer.copyToChannel(audioData, 0);
+
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContext.destination);
+
+      source.onended = () => {
+        updateStatus('tts', 'ready', 'Piper TTS ready');
+        audioContext.close();
+      };
+
+      source.start();
+      return source;
+    }
+
+    // TTS synthesis using Piper
+    async function speakText(text) {
+      if (!piperTTS) {
+        alert('Piper TTS not initialized');
         return;
       }
 
@@ -732,26 +1331,24 @@
         return;
       }
 
-      // Cancel any ongoing speech
-      window.speechSynthesis.cancel();
+      try {
+        updateStatus('tts', 'loading', 'Synthesizing speech...');
 
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-      utterance.volume = 1.0;
+        // Get selected speaker ID
+        const speakerId = parseInt(ttsVoiceSelect.value) || 0;
 
-      updateStatus('tts', 'loading', 'Speaking...');
+        // Synthesize audio
+        const { audioData, sampleRate } = await piperTTS.synthesize(text, speakerId);
 
-      utterance.onend = () => {
-        updateStatus('tts', 'ready', 'Using browser TTS');
-      };
+        updateStatus('tts', 'loading', 'Playing audio...');
 
-      utterance.onerror = (error) => {
+        // Play the generated audio
+        playAudio(audioData, sampleRate);
+
+      } catch (error) {
         console.error('TTS error:', error);
-        updateStatus('tts', 'error', `Speech error: ${error.error}`);
-      };
-
-      window.speechSynthesis.speak(utterance);
+        updateStatus('tts', 'error', `Speech error: ${error.message}`);
+      }
     }
 
     // UI helpers
@@ -809,6 +1406,52 @@
 
     // Refresh models button
     refreshModelsBtn.addEventListener('click', fetchOllamaModels);
+
+    // Whisper model change handler
+    whisperModelSelect.addEventListener('change', async () => {
+      const newModel = whisperModelSelect.value;
+      whisperModelSelect.disabled = true;
+      recordBtn.disabled = true;
+      textInput.disabled = true;
+      sendBtn.disabled = true;
+
+      updateStatus('asr', 'loading', `Loading ${newModel.split('/')[1]}...`);
+
+      try {
+        whisperModel = await pipeline('automatic-speech-recognition', newModel, {
+          quantized: true,
+          progress_callback: (progress) => {
+            if (progress.progress) {
+              asrProgress.style.display = 'block';
+              asrProgress.querySelector('.progress-fill').style.width = `${progress.progress * 100}%`;
+            }
+          }
+        });
+
+        localStorage.setItem('whisper_selected_model', newModel);
+        updateStatus('asr', 'ready', 'Ready (CPU/WASM)');
+        asrProgress.style.display = 'none';
+        console.log(`Switched to ${newModel}`);
+      } catch (error) {
+        updateStatus('asr', 'error', `Error: ${error.message}`);
+        console.error('Model loading error:', error);
+      } finally {
+        whisperModelSelect.disabled = false;
+        recordBtn.disabled = false;
+        textInput.disabled = false;
+        sendBtn.disabled = false;
+      }
+    });
+
+    // TTS voice change handler
+    ttsVoiceSelect.addEventListener('change', () => {
+      const selectedVoiceId = ttsVoiceSelect.value;
+
+      if (selectedVoiceId !== '') {
+        localStorage.setItem('tts_selected_voice_id', selectedVoiceId);
+        console.log(`Selected Piper speaker ID: ${selectedVoiceId}`);
+      }
+    });
 
     // Initialize
     initWhisper();
