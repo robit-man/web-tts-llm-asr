@@ -351,12 +351,12 @@
     .vad-panel {
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
-      gap: 14px;
+      gap: 12px;
       align-items: center;
-      background: #141820;
-      border: 1px solid #1f2937;
+      background: #1a1a1a;
+      border: 1px solid #2d2d2d;
       border-radius: 10px;
-      padding: 14px;
+      padding: 12px;
       margin-bottom: 14px;
     }
 
@@ -364,68 +364,77 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
     }
 
     .vad-pulse {
-      width: 46px;
-      height: 46px;
+      width: 42px;
+      height: 42px;
       border-radius: 50%;
-      background: radial-gradient(circle, rgba(56, 189, 248, 0.9), rgba(14, 165, 233, 0.35));
-      opacity: 0.65;
+      background: radial-gradient(circle, rgba(59, 130, 246, 0.35), rgba(59, 130, 246, 0.12));
+      border: 1px solid rgba(59, 130, 246, 0.25);
+      opacity: 0.7;
       transition: transform 120ms ease, opacity 120ms ease, box-shadow 200ms ease;
     }
 
     .vad-pulse.active {
-      opacity: 1;
-      box-shadow: 0 0 16px rgba(14, 165, 233, 0.6);
+      opacity: 0.95;
+      box-shadow: 0 0 12px rgba(59, 130, 246, 0.45);
     }
 
     .vad-db {
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 600;
-      color: #e5e7eb;
+      color: #e5e5e5;
     }
 
     .vad-status {
-      font-size: 11px;
+      font-size: 10px;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: #94a3b8;
+      color: #9ca3af;
     }
 
     .vad-eq {
       display: flex;
       align-items: flex-end;
-      gap: 6px;
-      height: 90px;
+      gap: 4px;
+      height: 82px;
+      background: #161616;
+      border: 1px solid #222;
+      border-radius: 8px;
+      padding: 8px;
     }
 
     .vad-eq-bar {
       flex: 1;
       height: 100%;
-      border-radius: 999px;
-      background: rgba(148, 163, 184, 0.2);
+      border-radius: 6px;
+      background: #0f0f0f;
       overflow: hidden;
     }
 
     .vad-eq-bar-fill {
       width: 100%;
       height: 20%;
-      border-radius: 999px;
-      background: linear-gradient(180deg, #38bdf8 0%, #0ea5e9 70%, #0ea5e900 100%);
-      transition: height 160ms ease;
+      border-radius: 6px;
+      background: linear-gradient(180deg, #4b5563 0%, #111827 100%);
+      transition: height 140ms ease;
     }
 
     .vad-timeout {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 8px;
+      background: #161616;
+      border: 1px solid #222;
+      border-radius: 8px;
+      padding: 10px;
     }
 
     .vad-timeout label {
       font-size: 12px;
-      color: #cbd5e1;
+      color: #d1d5db;
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -434,10 +443,11 @@
 
     .vad-timeout input[type="range"] {
       flex: 1;
-      accent-color: #0ea5e9;
+      accent-color: #3b82f6;
       height: 6px;
       border-radius: 999px;
-      background: linear-gradient(90deg, #1f2937 0%, #111827 100%);
+      background: #0f0f0f;
+      border: 1px solid #222;
     }
 
     .vad-countdown {
@@ -445,31 +455,31 @@
       align-items: center;
       gap: 10px;
       font-size: 12px;
-      color: #94a3b8;
+      color: #9ca3af;
     }
 
     .vad-progress {
       flex: 1;
       height: 6px;
-      background: #1f2937;
+      background: #0f0f0f;
       border-radius: 999px;
       overflow: hidden;
-      border: 1px solid #0f172a;
+      border: 1px solid #222;
     }
 
     .vad-progress-fill {
       height: 100%;
       width: 0%;
-      background: linear-gradient(90deg, #22c55e 0%, #eab308 70%, #ef4444 100%);
+      background: linear-gradient(90deg, #22c55e 0%, #eab308 65%, #ef4444 100%);
       transition: width 120ms linear;
     }
 
     .waveform-card {
       margin-bottom: 16px;
       padding: 12px;
-      border: 1px solid #1f2937;
+      border: 1px solid #2d2d2d;
       border-radius: 10px;
-      background: #0f172a;
+      background: #151515;
     }
 
     .waveform-card canvas {
@@ -477,15 +487,38 @@
       height: auto;
       display: block;
       border-radius: 6px;
-      background: #0b1220;
-      border: 1px solid #1f2937;
+      background: #0f0f0f;
+      border: 1px solid #222;
     }
 
     .waveform-meta {
       margin-top: 6px;
       font-size: 12px;
-      color: #94a3b8;
+      color: #9ca3af;
       text-align: center;
+    }
+
+    .toggles {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+
+    .toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border: 1px solid #2d2d2d;
+      border-radius: 8px;
+      background: #1a1a1a;
+      font-size: 12px;
+      color: #d1d5db;
+    }
+
+    .toggle input {
+      accent-color: #3b82f6;
     }
   </style>
 </head>
@@ -568,6 +601,16 @@
       <button class="btn-primary" id="record-btn" disabled>Start Recording</button>
       <button class="btn-success" id="speak-btn" disabled>Speak Response</button>
       <button class="btn-secondary" id="clear-btn">Clear Conversation</button>
+    </div>
+    <div class="toggles">
+      <label class="toggle">
+        <input type="checkbox" id="auto-speak-toggle" checked>
+        Auto speak responses
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="auto-restart-toggle" checked>
+        Auto-restart recording
+      </label>
     </div>
 
     <div class="conversation" id="conversation">
@@ -942,6 +985,8 @@
     const vadCountdown = document.getElementById('vad-countdown');
     const waveformCanvas = document.getElementById('waveform-canvas');
     const waveformMeta = document.getElementById('waveform-meta');
+    const autoSpeakToggle = document.getElementById('auto-speak-toggle');
+    const autoRestartToggle = document.getElementById('auto-restart-toggle');
 
     // Build EQ bars once
     const eqBarFills = [];
@@ -1638,19 +1683,24 @@
           throw new Error('No response received');
         }
 
-        // Add assistant response to history
-        const trimmedResponse = fullText.trim();
-        conversationHistory.push({
-          role: 'assistant',
-          content: trimmedResponse
-        });
+      // Add assistant response to history
+      const trimmedResponse = fullText.trim();
+      conversationHistory.push({
+        role: 'assistant',
+        content: trimmedResponse
+      });
 
-        lastResponse = trimmedResponse;
+      lastResponse = trimmedResponse;
 
-        // Prune conversation history to keep context manageable (last 10 messages)
-        if (conversationHistory.length > 10) {
-          conversationHistory = conversationHistory.slice(-10);
-        }
+      // Auto speak and restart recording if toggled on
+      if (autoSpeakToggle?.checked && lastResponse) {
+        await speakText(lastResponse);
+      }
+
+      // Prune conversation history to keep context manageable (last 10 messages)
+      if (conversationHistory.length > 10) {
+        conversationHistory = conversationHistory.slice(-10);
+      }
 
       } catch (error) {
         console.error('Ollama error:', error);
@@ -1671,21 +1721,27 @@
     // TTS synthesis (using browser TTS)
     // Helper function to play audio from Float32Array
     function playAudio(audioData, sampleRate) {
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      const audioBuffer = audioContext.createBuffer(1, audioData.length, sampleRate);
-      audioBuffer.copyToChannel(audioData, 0);
+      return new Promise((resolve, reject) => {
+        try {
+          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          const audioBuffer = audioContext.createBuffer(1, audioData.length, sampleRate);
+          audioBuffer.copyToChannel(audioData, 0);
 
-      const source = audioContext.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(audioContext.destination);
+          const source = audioContext.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(audioContext.destination);
 
-      source.onended = () => {
-        updateStatus('tts', 'ready', 'Piper TTS ready');
-        audioContext.close();
-      };
+          source.onended = () => {
+            updateStatus('tts', 'ready', 'Piper TTS ready');
+            audioContext.close().catch(() => undefined);
+            resolve();
+          };
 
-      source.start();
-      return source;
+          source.start();
+        } catch (error) {
+          reject(error);
+        }
+      });
     }
 
     // TTS synthesis using Piper
@@ -1710,8 +1766,16 @@
 
         updateStatus('tts', 'loading', 'Playing audio...');
 
-        // Play the generated audio
-        playAudio(audioData, sampleRate);
+        // Play the generated audio and optionally restart recording afterward
+        await playAudio(audioData, sampleRate);
+
+        if (autoRestartToggle?.checked && !isRecording) {
+          try {
+            await startRecording();
+          } catch (error) {
+            console.error('Auto-restart recording failed:', error);
+          }
+        }
 
       } catch (error) {
         console.error('TTS error:', error);
@@ -1773,6 +1837,27 @@
         sendBtn.click();
       }
     });
+
+    // Toggle handlers
+    if (autoSpeakToggle) {
+      autoSpeakToggle.addEventListener('change', () => {
+        localStorage.setItem('auto_speak_enabled', autoSpeakToggle.checked ? '1' : '0');
+      });
+      const saved = localStorage.getItem('auto_speak_enabled');
+      if (saved === '0') {
+        autoSpeakToggle.checked = false;
+      }
+    }
+
+    if (autoRestartToggle) {
+      autoRestartToggle.addEventListener('change', () => {
+        localStorage.setItem('auto_restart_enabled', autoRestartToggle.checked ? '1' : '0');
+      });
+      const savedRestart = localStorage.getItem('auto_restart_enabled');
+      if (savedRestart === '0') {
+        autoRestartToggle.checked = false;
+      }
+    }
 
     // Refresh models button
     refreshModelsBtn.addEventListener('click', fetchOllamaModels);
